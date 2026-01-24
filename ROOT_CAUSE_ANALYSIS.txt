@@ -1,0 +1,103 @@
+════════════════════════════════════════════════════════════════════════════
+   ROOT CAUSE ANALYSIS: Why "Duplicate entry '5146'" Keeps Happening
+════════════════════════════════════════════════════════════════════════════
+
+OBSERVAȚIE DIN LOG (15.01.2026 15:11):
+─────────────────────────────────────
+
+Mesajul COMPLET de eroare (acum vizibil):
+
+   Eroare la baza de date WordPress:
+   [Duplicate entry '5146' for key 'PRIMARY']
+   INSERT INTO wplt_wc_product_meta_lookup (product_id, sku)
+
+INTERPRETARE:
+─────────────
+
+Eroarea NU vine de la INSERT în wp_posts - aia funcționează!
+Eroarea vine din INSERT în wplt_wc_product_meta_lookup!
+
+FLUXUL REAL DE ERROARE:
+───────────────────────
+
+1. POST /products cu SKU=WEBGSM-000324-2691
+   ↓
+2. WooCommerce creează product în wp_posts
+   ↓
+   ✓ INSERT INTO wp_posts → ID=5146 (SUCCESS)
+   ✓ INSERT INTO wp_postmeta → (SUCCESS)
+   ↓
+3. WooCommerce creează meta-lookup entry
+   ↓
+   ✗ INSERT INTO wplt_wc_product_meta_lookup (product_id=5146, sku=...)
+   ✗ FAIL: "Duplicate entry '5146' for key 'PRIMARY'"
+   ↓
+4. Rollback: Șterg din wp_posts? NU → rămâne phantom
+   ↓
+5. Rezultat: Product ID=5146 în wp_posts dar FĂRĂ meta_lookup
+   ↓
+6. RETRY cu next ID=5147
+   ↓
+7. Ciclu se repetă... 5148, 5149, 5150, etc.
+
+CAUZA REALĂ - DATABASE CORRUPTION:
+──────────────────────────────────
+
+Tabelul wplt_wc_product_meta_lookup are orphaned entries din:
+- Tentativele de import anterioare (5141-5145)
+- Alte failed imports
+- Posibil corrupted indexes
+
+Cand WooCommerce incearcă INSERT cu product_id=5146:
+- Dacă tabelul are deja un entry cu ID=5146 (orphaned)
+- MySQL refuză: "Duplicate entry" (PRIMARY KEY constraint)
+
+PROBA:
+──────
+
+Fiecare retry crează phantom ID SECVENȚIAL:
+5146 → 5147 → 5148 → 5149 → 5150
+
+Dacă ar fi conflict de SKU, ar vedea alt mesaj.
+Dar mesajul e PRIMARY KEY - asta înseamnă:
+- Tabelul meta_lookup are înregistrări orfane
+- Acelea trebuie ȘTERSE
+
+SOLUȚIA - 2 OPȚIUNI:
+───────────────────
+
+✅ OPȚIUNEA 1: QUICK FIX (recomandată)
+   1. Rulează URGENT_DATABASE_REPAIR.txt în phpMyAdmin
+   2. Șterge orphaned entries
+   3. Repair table
+   4. Relansează import
+
+✅ OPȚIUNEA 2: NUCLEAR CLEANUP (dacă 1 nu merge)
+   1. Backup database
+   2. DELETE all products (wp_posts WHERE post_type='product')
+   3. DELETE from meta tables
+   4. Rebuild
+   5. Relansează import
+
+DE CE NU S-A DESCOPERIT MAI DEVREME:
+────────────────────────────────────
+
+Versiunile anterioare:
+- Logau doar "Status 400" → nelamuritor
+- NU arătau mesajul complet de la WordPress
+- Ascundeau INSERT INTO wplt_wc_product_meta_lookup
+
+Versiunea 3.3:
+✅ Afișează MESAJUL COMPLET de eroare
+✅ Arată că e problema INSERT meta_lookup
+✅ Nu mai e mystery!
+
+NEXT STEPS:
+───────────
+
+1. ⏸️ STOP - nu mai rula import acum
+2. 🔧 REPAIR - Rulează URGENT_DATABASE_REPAIR.txt
+3. ✅ VERIFY - Confirmă că cleanup a funcționat
+4. 🚀 RETRY - Relansează import
+
+════════════════════════════════════════════════════════════════════════════

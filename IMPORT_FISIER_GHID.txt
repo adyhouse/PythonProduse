@@ -1,0 +1,213 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║                   📋 GHID IMPORT DIN FISIER                                ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+🎯 DOUA METODE DE IMPORT
+────────────────────────────────────────────────────────────────────────────
+
+1️⃣  IMPORT DIN LISTA SKU (simplu)
+   Fisier: sku_list.txt
+   Format: Un SKU pe linie
+   Optiune: [3] Import din Fisier SKU
+
+2️⃣  IMPORT DIN CSV (complet)
+   Fisier: produse.csv
+   Format: CSV cu toate detaliile produsului
+   Optiune: [4] Import din Fisier CSV
+
+
+📝 FORMAT FISIER SKU_LIST.TXT
+────────────────────────────────────────────────────────────────────────────
+
+Continut fisier:
+
+# Comentarii (ignorate)
+PROD-001
+PROD-002
+PROD-003
+SAMSUNG-S24-128GB
+IPHONE-15-PRO-256GB
+
+Reguli:
+• Un SKU pe linie
+• Linii care incep cu # sunt comentarii
+• Linii goale sunt ignorate
+
+
+📊 FORMAT FISIER PRODUSE.CSV
+────────────────────────────────────────────────────────────────────────────
+
+Continut fisier:
+
+SKU,Nume_Produs,Pret_EUR,Categorie,URL_Imagine
+PROD-001,Telefon Samsung Galaxy S24,899,Telefoane,https://example.com/img1.jpg
+PROD-002,Husa Samsung S24,29,Accesorii,https://example.com/img2.jpg
+PROD-003,Incarcator Wireless,49,Accesorii,https://example.com/img3.jpg
+
+Coloane:
+• SKU ............... Cod produs unic
+• Nume_Produs ....... Nume complet produs
+• Pret_EUR .......... Pret in euro (va fi convertit in RON)
+• Categorie ......... Categoria produsului
+• URL_Imagine ....... Link catre imagine produs
+
+
+🚀 UTILIZARE IMPORT SKU
+────────────────────────────────────────────────────────────────────────────
+
+PASUL 1: Editeaza sku_list.txt
+   • Deschide cu Notepad: sku_list.txt
+   • Adauga SKU-urile tale, unul pe linie:
+     
+     PROD-001
+     PROD-002
+     PROD-003
+   
+   • Salveaza fisierul
+
+PASUL 2: Ruleaza ImportProduse.bat
+   • Dublu-click pe ImportProduse.bat
+
+PASUL 3: Alege optiunea [3]
+   • Import din Fisier SKU
+
+PASUL 4: Programul va importa
+   • Citeste SKU-uri din fisier
+   • Importa fiecare produs
+   • Genereaza log cu detalii
+
+
+🎯 UTILIZARE IMPORT CSV
+────────────────────────────────────────────────────────────────────────────
+
+PASUL 1: Editeaza produse.csv
+   • Deschide cu Excel sau Notepad: produse.csv
+   • Adauga produsele tale:
+     
+     SKU,Nume_Produs,Pret_EUR,Categorie,URL_Imagine
+     PROD-001,Telefon,899,Telefoane,http://img.jpg
+   
+   • Salveaza ca CSV
+
+PASUL 2: Ruleaza ImportProduse.bat
+   • Dublu-click pe ImportProduse.bat
+
+PASUL 3: Alege optiunea [4]
+   • Import din Fisier CSV Complet
+
+PASUL 4: Programul va importa
+   • Citeste toate coloanele din CSV
+   • Importa fiecare produs cu toate detaliile
+   • Genereaza log cu rezultate
+
+
+📋 EXEMPLU FISIER SKU_LIST.TXT
+────────────────────────────────────────────────────────────────────────────
+
+# Lista produse pentru import
+# Adaugat pe 14 ianuarie 2026
+
+# Telefoane Samsung
+SAMSUNG-S24-128GB-BLACK
+SAMSUNG-S24-256GB-WHITE
+SAMSUNG-S23-128GB-BLUE
+
+# Accesorii
+HUSA-SAMSUNG-S24-CLEAR
+INCARCATOR-WIRELESS-15W
+CABLU-USB-C-2M
+
+# iPhone
+IPHONE-15-128GB-BLACK
+IPHONE-15-PRO-256GB-TITANIUM
+
+
+📊 EXEMPLU FISIER PRODUSE.CSV
+────────────────────────────────────────────────────────────────────────────
+
+SKU,Nume_Produs,Pret_EUR,Categorie,URL_Imagine
+SAMSUNG-S24-128GB,Samsung Galaxy S24 128GB Black,849,Telefoane,https://img.ro/s24-black.jpg
+SAMSUNG-S24-256GB,Samsung Galaxy S24 256GB White,949,Telefoane,https://img.ro/s24-white.jpg
+HUSA-S24,Husa Samsung S24 Clear,29,Accesorii,https://img.ro/husa-clear.jpg
+INCARCATOR-15W,Incarcator Wireless 15W,49,Accesorii,https://img.ro/charger.jpg
+IPHONE-15-128GB,iPhone 15 128GB Black,899,Telefoane,https://img.ro/iphone15.jpg
+
+
+💡 SFATURI
+────────────────────────────────────────────────────────────────────────────
+
+✅ Foloseste SKU-uri unice pentru fiecare produs
+✅ In CSV, nu folosi virgule in numele produsului
+✅ URL-urile imaginilor trebuie sa fie complete (http://...)
+✅ Preturile sunt in EUR si vor fi convertite in RON
+✅ Verifica log-urile in folderul logs/ dupa import
+✅ Poti edita fisierele cu Excel, Notepad sau orice editor
+
+
+🔍 VERIFICARE IMPORT
+────────────────────────────────────────────────────────────────────────────
+
+Dupa import:
+
+1. Verifica log-ul generat:
+   logs\import_sku_YYYYMMDD_HHMM.log
+   sau
+   logs\import_csv_YYYYMMDD_HHMM.log
+
+2. Verifica in WooCommerce:
+   webgsm.ro/wp-admin → Produse
+
+3. Cauta dupa SKU pentru a gasi produsele importate
+
+
+🐛 PROBLEME FRECVENTE
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: "Fisierul sku_list.txt nu exista"
+SOLUTIE: Programul va crea automat un template
+         Editeaza template-ul si ruleaza din nou
+
+PROBLEMA: "CSV nu se citeste corect"
+SOLUTIE: Asigura-te ca separatorul este virgula (,)
+         Nu folosi virgule in continutul celulelor
+
+PROBLEMA: "Produsele nu apar in WooCommerce"
+SOLUTIE: Verifica API keys in configurare [1]
+         Ruleaza test conexiuni [2]
+
+
+✅ CHECKLIST
+────────────────────────────────────────────────────────────────────────────
+
+PENTRU IMPORT SKU:
+   ☐ Creat/Editat sku_list.txt
+   ☐ Adaugate SKU-uri (unul pe linie)
+   ☐ Salvat fisier
+   ☐ Rulat ImportProduse.bat
+   ☐ Ales optiunea [3]
+   ☐ Verificat log in logs/
+
+PENTRU IMPORT CSV:
+   ☐ Creat/Editat produse.csv
+   ☐ Adaugate produse cu toate coloanele
+   ☐ Salvat ca CSV
+   ☐ Rulat ImportProduse.bat
+   ☐ Ales optiunea [4]
+   ☐ Verificat log in logs/
+
+
+🎉 GATA!
+────────────────────────────────────────────────────────────────────────────
+
+Acum poti importa produse din fisiere cu SKU-uri sau CSV complet!
+
+Editeaza fisierele, ruleaza programul, si importa!
+
+
+════════════════════════════════════════════════════════════════════════════
+Versiune: 1.0.0
+Data: 14 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,258 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║                  🔧 REZOLVARE EROARE 500 WOOCOMMERCE                       ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+❌ EROAREA: "Eroare WooCommerce: 500"
+════════════════════════════════════════════════════════════════════════════
+
+Eroarea 500 = "Internal Server Error" - o problemă pe serverul WooCommerce,
+NU cu programul tău!
+
+
+🔍 CAUZE POSIBILE ȘI SOLUȚII
+════════════════════════════════════════════════════════════════════════════
+
+
+1️⃣ MEMORY LIMIT PHP PREA MIC
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: PHP nu are suficientă memorie pentru procesare
+
+SOLUȚIE A - Prin wp-config.php:
+
+1. Conectează-te la site prin FTP sau File Manager (cPanel)
+2. Deschide fișierul: wp-config.php (în root)
+3. Adaugă ÎNAINTE de linia "That's all, stop editing!":
+
+   define('WP_MEMORY_LIMIT', '256M');
+   define('WP_MAX_MEMORY_LIMIT', '512M');
+
+4. Salvează fișierul
+5. Testează din nou importul
+
+SOLUȚIE B - Prin .htaccess:
+
+1. Deschide fișierul: .htaccess (în root)
+2. Adaugă la început:
+
+   php_value memory_limit 256M
+   php_value upload_max_filesize 64M
+   php_value post_max_size 64M
+   php_value max_execution_time 300
+   php_value max_input_time 300
+
+3. Salvează și testează
+
+
+2️⃣ PLUGIN CONFLICTUAL
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: Un plugin blochează API-ul WooCommerce
+
+TESTARE:
+
+1. Mergi în WordPress Admin
+2. Plugins → Installed Plugins
+3. Dezactivează TOATE plugin-urile (EXCEPTÂND WooCommerce)
+4. Testează importul
+5. Dacă merge, activează plugin-urile unul câte unul pentru a găsi vinovatul
+
+PLUGIN-URI PROBLEMATICE CUNOSCUTE:
+• Security plugins (Wordfence, iThemes Security)
+• Cache plugins (WP Super Cache, W3 Total Cache)
+• Firewall plugins (Cloudflare, Sucuri)
+
+
+3️⃣ RESTRICȚII FIREWALL / SECURITY
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: Firewall-ul blochează request-urile API
+
+SOLUȚII:
+
+A. Dezactivează temporar firewall-ul (Cloudflare, Wordfence, etc.)
+
+B. Whitelist IP-ul tău:
+   1. Află IP-ul: https://whatismyipaddress.com
+   2. Adaugă în whitelist la hosting sau firewall
+
+C. Verifică htaccess pentru reguli de blocare
+
+
+4️⃣ PERMALINKS INCORECTE
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: Structura URL-urilor este greșită
+
+SOLUȚIE:
+
+1. Mergi în WordPress Admin
+2. Settings → Permalinks
+3. Click pe "Save Changes" (chiar dacă nu schimbi nimic)
+4. Aceasta regenerează .htaccess
+5. Testează din nou
+
+
+5️⃣ SSL / HTTPS CONFIGURATION
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: Probleme cu certificatul SSL
+
+VERIFICARE:
+
+1. URL-ul în configurare trebuie să fie HTTPS:
+   ✓ https://webgsm.ro (corect)
+   ✗ http://webgsm.ro (greșit)
+   ✗ https://webgsm.ro/ (greșit - fără / la final)
+
+2. Verifică certificatul SSL:
+   https://www.ssllabs.com/ssltest/analyze.html?d=webgsm.ro
+
+
+6️⃣ DEBUG WOOCOMMERCE
+────────────────────────────────────────────────────────────────────────────
+
+ACTIVARE DEBUG MODE:
+
+1. Deschide: wp-config.php
+2. Găsește linia: define('WP_DEBUG', false);
+3. Schimbă în:
+
+   define('WP_DEBUG', true);
+   define('WP_DEBUG_LOG', true);
+   define('WP_DEBUG_DISPLAY', false);
+
+4. Salvează
+5. Încearcă importul din nou
+6. Verifică log-ul: wp-content/debug.log
+7. Citește mesajele de eroare
+
+⚠️ IMPORTANT: După ce termini, pune înapoi WP_DEBUG la false!
+
+
+7️⃣ VERIFICĂ VERSIUNEA WOOCOMMERCE
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: Versiune prea veche sau incompatibilă
+
+VERIFICARE:
+
+1. WordPress Admin → Plugins
+2. Verifică versiunea WooCommerce
+3. Actualizează la ultima versiune:
+   - Click "Update Now" dacă apare
+
+VERSIUNE RECOMANDATĂ: WooCommerce 8.0+
+
+
+8️⃣ VERIFICĂ LOG-URILE SERVERULUI
+────────────────────────────────────────────────────────────────────────────
+
+ACCES LA LOG-URI:
+
+A. Prin cPanel:
+   1. Login în cPanel
+   2. Error Log sau Metrics → Errors
+   3. Caută erori la data/ora importului
+
+B. Prin hosting support:
+   1. Contactează hosting-ul
+   2. Cere să verifice error logs pentru site-ul tău
+
+
+9️⃣ SKU DUPLICAT
+────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA: SKU-ul există deja în baza de date
+
+VERIFICARE:
+
+1. WordPress Admin → Products
+2. Caută după SKU: 107182113502
+3. Dacă există, șterge-l sau schimbă SKU-ul
+
+SOLUȚIE AUTOMATĂ în program:
+- Programul va verifica automat SKU-uri duplicate în viitor
+
+
+🔟 TESTARE API MANUALĂ
+────────────────────────────────────────────────────────────────────────────
+
+TEST cu POSTMAN sau cURL:
+
+curl -X POST "https://webgsm.ro/wp-json/wc/v3/products" \
+  -u "CONSUMER_KEY:CONSUMER_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Test Produs",
+    "type": "simple",
+    "regular_price": "100",
+    "sku": "TEST-001",
+    "status": "publish"
+  }'
+
+Dacă tot primești 500, problema e pe server, nu la program!
+
+
+💡 SOLUȚII RAPIDE - ÎN ORDINE
+════════════════════════════════════════════════════════════════════════════
+
+Încearcă în ordine:
+
+☑ 1. Regenerează Permalinks (Settings → Permalinks → Save)
+☑ 2. Verifică URL-ul (https fără / la final)
+☑ 3. Crește Memory Limit (wp-config.php)
+☑ 4. Dezactivează plugin-uri security temporar
+☑ 5. Activează WP_DEBUG și verifică debug.log
+☑ 6. Contactează hosting-ul pentru log-uri server
+
+
+🆘 DACĂ NIMIC NU FUNCȚIONEAZĂ
+════════════════════════════════════════════════════════════════════════════
+
+1. Contactează HOSTING SUPPORT:
+   - Spune-le: "Primesc eroare 500 când folosesc WooCommerce REST API"
+   - Cere-le să verifice error logs
+   - Întreabă despre limitări PHP/Apache
+
+2. Verifică STATUS SERVER:
+   - CPU usage
+   - Memory usage
+   - Disk space
+
+3. Încearcă pe un site de TEST mai întâi
+   - Instalează WordPress + WooCommerce local
+   - Testează importul acolo
+
+
+📝 INFO PENTRU PROGRAMUL PYTHON
+════════════════════════════════════════════════════════════════════════════
+
+Am îmbunătățit programul să afișeze:
+
+✅ Detalii complete despre erori
+✅ Mesajul exact de la WooCommerce
+✅ Sugestii de rezolvare
+✅ Traceback complet
+
+Rulează din nou importul și verifică tab-ul LOG pentru detalii!
+
+
+🔄 ACTUALIZARE PROGRAM
+════════════════════════════════════════════════════════════════════════════
+
+Programul a fost actualizat automat!
+
+Pentru a vedea erorile detaliate:
+1. Închide programul dacă e deschis
+2. Rulează din nou: START_PROGRAM.bat
+3. Încearcă importul
+4. Verifică tab LOG pentru mesaje detaliate
+
+
+════════════════════════════════════════════════════════════════════════════
+Ultima actualizare: 14 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

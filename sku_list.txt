@@ -1,0 +1,8 @@
+# Lista LINK-URI sau EAN-uri pentru import
+# Poți pune:
+#   - Link-uri directe din MobileSentrix (RECOMANDAT!)
+#   - SAU EAN-uri (dacă există în căutare)
+#   - SAU SKU MobileSentrix (12-14 cifre)
+
+# Link-uri de produse:
+https://www.mobilesentrix.eu/back-camera-compatible-for-iphone-17-pro-17-pro-max

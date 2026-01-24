@@ -1,0 +1,103 @@
+════════════════════════════════════════════════════════════════════════════
+                      DIAGNOZA EROARE 400 - PHANTOM PRODUCTS
+════════════════════════════════════════════════════════════════════════════
+
+PROBLEMĂ OBSERVATĂ:
+─────────────────
+
+Fiecare POST /products returnează Status 400 și creează phantom IDs (5141, 5142, 5143, 5144, 5145).
+
+LOG ERROR:
+   [15:07:11] [WARNING] ⚠️ Conflict detectat
+   [15:07:11] [WARNING] 🔍 Phantom ID creat: 5141
+   [15:07:11] [INFO] 🗑️ Încerc ștergere AUTOMATĂ phantom ID 5141...
+   [15:07:13] [WARNING] ⚠️ Delete eșuat (status 404)
+
+CAUZA REALĂ:
+───────────
+
+1. POST /products returnează 400 de fiecare dată
+2. WooCommerce creează înregistrarea în wp_posts (cu ID auto_increment)
+3. Inserarea în wp_wc_product_meta_lookup EȘUEAZĂ (fără motiv cunoscut)
+4. Rezultat: Phantom product - înregistrare incompletă în database
+5. API REST DELETE returnează 404 pentru phantom (nu vede înregistrarea incompletă)
+
+SOLUȚII IMPLEMENTATE:
+────────────────────
+
+✅ 1. RETRY LOGIC
+   - Max 5 încercări cu UUID SKU-uri diferite
+   - Fiecare retry are SKU complet diferit (evită coliziuni)
+
+✅ 2. PHANTOM DETECTION
+   - Extrage phantom ID din mesajul de eroare: "Duplicate entry '5141'"
+   - Parseaza corect HTML entities și message text
+
+✅ 3. MULTI-STAGE DELETION
+   - Nivel 1: Încearcă DELETE via REST API
+   - Nivel 2: Dacă DELETE/404, afișează SQL manual pentru phpMyAdmin
+   - Nivel 3: UUID fallback pentru retry
+
+✅ 4. BETTER ERROR REPORTING
+   - Afișează mesajul de eroare complet (nu doar "Status 400")
+   - Diferențiază între "Duplicate entry" și alte erori 400
+
+NEXT STEPS:
+──────────
+
+❌ STOP: Curățare manuală DUPĂ FIECARE EROARE nu mai e necesară!
+         Programul o face automat.
+
+⚠️  DAR PROBLEMA REALĂ E ALTA:
+    Status 400 se întoarce pentru FIECARE POST - asta nu e normal!
+
+TREBUIE INVESTIGAT:
+──────────────────
+
+A. Validare date produs:
+   - Verifică că wc_data are toate câmpurile obligatorii
+   - Verifică tipurile de date (preț trebuie să fie string, nu float)
+   - Verific encoding (UTF-8?)
+
+B. Status WooCommerce:
+   - Verific că pluginul WooCommerce e activ
+   - Verific PHP error log (wp-content/debug.log)
+   - Verific database integrity
+
+C. API Permissions:
+   - Consumer Key/Secret au permisiuni complete (Read/Write)?
+   - API e activat în WooCommerce settings?
+
+D. Database State:
+   - Verifică dacă tabela wp_wc_product_meta_lookup e coruptă
+   - Verifică AUTO_INCREMENT în wp_posts (e la 5146?)
+   - Verifică pentru FK constraints
+
+COMENZI DE DIAGNOSTIC:
+─────────────────────
+
+# Verifică starea database:
+SELECT COUNT(*) FROM wplt_posts WHERE post_type='product';
+SELECT MAX(ID) FROM wplt_posts;
+
+# Verifică phantom IDs:
+SELECT ID, post_title, post_status FROM wplt_posts WHERE ID IN (5141, 5142, 5143, 5144, 5145);
+
+# Verifică meta_lookup:
+SELECT COUNT(*) FROM wplt_wc_product_meta_lookup;
+SELECT * FROM wplt_wc_product_meta_lookup WHERE product_id IN (5141, 5142, 5143, 5144, 5145);
+
+# Curățare manuală phantom IDs:
+DELETE FROM wplt_postmeta WHERE post_id IN (5141, 5142, 5143, 5144, 5145);
+DELETE FROM wplt_posts WHERE ID IN (5141, 5142, 5143, 5144, 5145);
+ALTER TABLE wplt_posts AUTO_INCREMENT=5146;
+
+PROGRAM IMPROVEMENTS (v3.2):
+───────────────────────────
+
+Lines modified:
+✓ 809-880: Status 400 handling cu multiple error types
+✓ 825-847: Auto-delete phantom cu fallback la MySQL info
+✓ 870-882: Non-duplicate error handling cu retry
+
+Output mai detaliat în LOG!

@@ -1,0 +1,44 @@
+════════════════════════════════════════════════════════
+    GHID RAPID - EXPORT PRODUSE CSV
+════════════════════════════════════════════════════════
+
+📦 START:
+---------
+1. Deschide START_PROGRAM.bat
+2. Click "🚀 START EXPORT CSV"
+3. Așteaptă finalizarea
+
+
+📁 REZULTATE:
+-------------
+✓ CSV: data/export_produse_TIMESTAMP.csv
+✓ Imagini: images/*.jpg
+
+
+🔧 OPȚIUNI RECOMANDATE:
+-----------------------
+☑ Descarcă toate imaginile produsului
+☑ Optimizează imaginile (resize)
+☑ Convertește prețul EUR → RON
+☑ Extrage descriere în română
+
+
+⚠️ IMPORTANT:
+-------------
+• Programul NU mai inserează în WooCommerce
+• Creează doar CSV + descarcă imagini local
+• Pentru import folosește un plugin WordPress
+
+
+💾 IMPORT CSV ÎN WOOCOMMERCE:
+-----------------------------
+1. WordPress → Plugins → Add New
+2. Caută "WP All Import" sau "Product Import Export"
+3. Install & Activate
+4. Importă CSV-ul generat
+5. Asociază imaginile (din folderul images/)
+
+
+═══════════════════════════════════════════════════════
+VERSIUNE: CSV Export (Modificată 17.01.2026)
+═══════════════════════════════════════════════════════

@@ -1,0 +1,144 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║                     📂 INDEX FIȘIERE - IMPORT PRODUSE                      ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+🎯 ACEST PROGRAM ARE 2 VERSIUNI:
+
+  Versiunea 1: ImportProduse.bat (Batch - Simulare)
+  Versiunea 2: import_gui.py (Python - Funcționalitate COMPLETĂ cu GUI)
+
+
+═══════════════════════════════════════════════════════════════════════════
+              🚀 PENTRU IMPORT REAL CU IMAGINI (Recomandat)
+═══════════════════════════════════════════════════════════════════════════
+
+UTILIZEAZĂ VERSIUNEA PYTHON CU GUI:
+
+📄 README_START.txt .................. ⭐ START AICI - Ghid rapid
+📄 START_PROGRAM.bat ................. 🚀 PORNEȘTE PROGRAMUL (GUI)
+
+PREGĂTIRE (Prima dată):
+📄 INSTALARE_PYTHON.bat .............. 1️⃣ Instalează Python 3.11
+📄 INSTALEAZA_DEPENDINTE.bat ......... 2️⃣ Instalează pachete necesare
+
+COMPILARE EXE (Opțional):
+📄 COMPILEAZA_EXE.bat ................ 📦 Creează EXE standalone
+
+DOCUMENTAȚIE:
+📄 GHID_UTILIZARE.txt ................ 📖 Documentație completă
+📄 requirements.txt .................. 📋 Lista dependințe Python
+
+
+═══════════════════════════════════════════════════════════════════════════
+                    📁 PENTRU SIMULARE SIMPLĂ (Fără Python)
+═══════════════════════════════════════════════════════════════════════════
+
+UTILIZEAZĂ VERSIUNEA BATCH (Nu descarcă imagini reale):
+
+📄 ImportProduse.bat ................. Program batch (simulare)
+📄 START.txt ......................... Instrucțiuni pentru batch
+📄 README.txt ........................ Ghid pentru batch
+📄 IMPORT_FISIER_GHID.txt ............ Ghid import din fișiere
+
+
+═══════════════════════════════════════════════════════════════════════════
+                            📝 FIȘIERE DATE
+═══════════════════════════════════════════════════════════════════════════
+
+📄 sku_list.txt ...................... Lista cu SKU-uri pentru import
+📄 produse.csv ....................... Template import CSV complet
+📄 .env .............................. Configurație API (creat automat)
+📄 .env.example ...................... Template configurație
+
+
+═══════════════════════════════════════════════════════════════════════════
+                          📁 FOLDERE
+═══════════════════════════════════════════════════════════════════════════
+
+📁 logs/ ............................. Log-uri importuri
+📁 images/ ........................... Imagini descărcate temporar
+📁 data/ ............................. Date cache
+📁 dist/ ............................. EXE compilat (după COMPILEAZA_EXE.bat)
+
+
+═══════════════════════════════════════════════════════════════════════════
+                    🎯 CE VERSIUNE SĂ FOLOSEȘTI?
+═══════════════════════════════════════════════════════════════════════════
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  📦 VERSIUNEA PYTHON (import_gui.py) - RECOMANDATĂ                     │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ✅ Interfață grafică user-friendly                                    │
+│  ✅ Descarcă TOATE imaginile (3-5 poze/produs) la rezoluție mare      │
+│  ✅ Web scraping real de pe mobilesentrix.eu                          │
+│  ✅ Optimizare automată imagini                                        │
+│  ✅ Convertire EUR → RON                                               │
+│  ✅ Upload real în WooCommerce                                         │
+│  ✅ Se poate compila în EXE                                            │
+│                                                                        │
+│  📝 Necesită: Python 3.11 (instalare automată cu script)              │
+│  ⏱️ Setup: 5-10 minute (o singură dată)                              │
+│                                                                        │
+│  🚀 START: Dublu-click pe START_PROGRAM.bat                           │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  📄 VERSIUNEA BATCH (ImportProduse.bat)                                │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ⚠️ DOAR SIMULARE - Nu face import real                               │
+│  ❌ Nu descarcă imagini                                                │
+│  ❌ Nu face web scraping                                               │
+│  ✅ Nu necesită Python                                                 │
+│  ✅ Funcționează imediat                                               │
+│                                                                        │
+│  📝 Pentru: Testare rapidă, Demo                                      │
+│  ⏱️ Setup: 0 secunde                                                  │
+│                                                                        │
+│  🚀 START: Dublu-click pe ImportProduse.bat                           │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+                       🎯 RECOMANDAREA MEA
+═══════════════════════════════════════════════════════════════════════════
+
+Pentru IMPORT REAL de produse cu imagini:
+
+👉 Folosește VERSIUNEA PYTHON (import_gui.py)
+
+Pași:
+  1. Citește README_START.txt
+  2. Rulează INSTALARE_PYTHON.bat
+  3. Rulează INSTALEAZA_DEPENDINTE.bat
+  4. Rulează START_PROGRAM.bat
+  5. Configurează WooCommerce API
+  6. Adaugă SKU-uri în sku_list.txt
+  7. START IMPORT!
+
+Opțional (pentru EXE):
+  8. Rulează COMPILEAZA_EXE.bat
+  9. Folosește dist\ImportProduse.exe
+
+
+═══════════════════════════════════════════════════════════════════════════
+                         SUPORT ȘI AJUTOR
+═══════════════════════════════════════════════════════════════════════════
+
+📖 Documentație completă: GHID_UTILIZARE.txt
+🚀 Pornire rapidă: README_START.txt
+📋 Log-uri: folder logs/
+
+
+════════════════════════════════════════════════════════════════════════════
+Versiune: 2.0
+Data: 14 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

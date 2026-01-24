@@ -1,0 +1,134 @@
+════════════════════════════════════════════════════════════════════════════
+                    DISCOVERY - THE REAL PROBLEM FOUND!
+════════════════════════════════════════════════════════════════════════════
+
+DATA: 15.01.2026 15:11:27
+VERSIUNE: 3.3 - Error Message Visibility FIX
+
+BEFORE vs AFTER:
+────────────────
+
+VERSIUNEA 3.2 (BLIND):
+   Log: "[15:07:11] [WARNING] ⚠️ Conflict detectat"
+   Indicator: Status 400
+   Problem: 🤷 NU STIU CE E PROBLEMA!
+
+VERSIUNEA 3.3 (CLEAR):
+   Log: "[15:11:38] [WARNING] ⚠️ Status 400 - <div id="error"...
+         [Duplicate entry '5146' for key 'PRIMARY']
+         INSERT INTO wplt_wc_product_meta_lookup"
+   Indicator: EXACT mesajul de eroare!
+   Problem: ✅ EXACT PROBLEM IDENTIFIED!
+
+════════════════════════════════════════════════════════════════════════════
+
+THE BREAKTHROUGH:
+─────────────────
+
+"Duplicate entry '5146' for key 'PRIMARY'" 
+în tabelul wplt_wc_product_meta_lookup
+
+NU în wp_posts (aia merge!)
+NU constraint de SKU
+NU api permission issue
+
+E EXACT: Tabelul meta_lookup conține orphaned entries!
+
+════════════════════════════════════════════════════════════════════════════
+
+WHAT HAPPENED:
+───────────────
+
+✓ STEP 1: Tentativa 1 de import (15.01 15:07)
+  POST /products → Creează product ID 5141 ✓
+  INSERT meta_lookup → FAIL "Duplicate entry"
+
+✓ STEP 2: Phantom rămâne în wp_posts
+  5141 exists in wp_posts
+  5141 NOT in wp_wc_product_meta_lookup (incomplete!)
+
+✓ STEP 3: Retry cu alt SKU (UUID)
+  POST /products → Creează product ID 5142
+  INSERT meta_lookup → FAIL AGAIN "Duplicate entry"
+
+✓ STEP 4: Ciclu se repetă
+  5143, 5144, 5145 (tentativa 3.2)
+  5146, 5147, 5148, 5149, 5150 (tentativa 3.3)
+
+✓ ROOT CAUSE:
+  Tabelul wplt_wc_product_meta_lookup
+  conține deja entries orphaned
+  → NEW inserts fail cu PRIMARY KEY conflict
+  → Ciclu infinit de phantoms
+
+════════════════════════════════════════════════════════════════════════════
+
+WHY VERSION 3.3 HELPED:
+───────────────────────
+
+BEFORE (v3.2):
+- Log show: "Status 400"
+- What developer thinks: "Maybe invalid data?"
+- What to try: Change SKU format, add validation
+- Actual problem: Invisible in logs!
+
+AFTER (v3.3):
+- Log show: FULL ERROR MESSAGE from WordPress
+- What developer sees: "Duplicate entry in meta_lookup table"
+- What to try: Database repair!
+- Actual problem: CRYSTAL CLEAR!
+
+════════════════════════════════════════════════════════════════════════════
+
+THE FIX:
+─────────
+
+1. DELETE orphaned entries from wplt_wc_product_meta_lookup
+2. DELETE phantom products from wp_posts
+3. REPAIR & OPTIMIZE tables
+4. RESET AUTO_INCREMENT
+5. RETRY import
+
+Files created with instructions:
+  ✅ URGENT_DATABASE_REPAIR.txt
+  ✅ ROOT_CAUSE_ANALYSIS.txt
+  ✅ CLEANUP_COPY_PASTE_FINAL.txt
+
+════════════════════════════════════════════════════════════════════════════
+
+LESSONS LEARNED:
+─────────────────
+
+1. Error visibility is CRITICAL
+   Without seeing the full error message, debugging is blind
+
+2. Version 3.3 improvement was simple but powerful:
+   Just show response.text instead of "Status 400"
+
+3. The real problem was database corruption
+   Not the import logic or API permissions
+
+4. Need to check database health BEFORE import
+   wp_wc_product_meta_lookup should be clean
+
+5. Orphaned entries corrupt primary key sequences
+   One failed insert can block all future inserts
+
+════════════════════════════════════════════════════════════════════════════
+
+NEXT VERSION (v3.4):
+────────────────────
+
+Should add:
+✅ Pre-import database health check
+✅ Automatic orphaned entry detection
+✅ Automatic cleanup of orphaned entries
+✅ Validation that meta_lookup is clean before POST
+
+════════════════════════════════════════════════════════════════════════════
+
+STATUS: PROBLEM IDENTIFIED ✅
+ACTION: RUN DATABASE CLEANUP
+NEXT:   RETRY IMPORT
+
+════════════════════════════════════════════════════════════════════════════

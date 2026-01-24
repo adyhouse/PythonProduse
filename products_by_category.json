@@ -1,0 +1,13 @@
+{
+  "total_products": 2,
+  "total_categories": 1,
+  "categories": {
+    "Apple - iPhone": {
+      "count": 2,
+      "links": [
+        "https://www.mobilesentrix.eu/charging-port-flex-cable-for-iphone-17-pro-max-premium-international-version-cosmic-orange",
+        "https://www.mobilesentrix.eu/replacement-battery-for-iphone-17-pro-max-used-oem-pull-grade-a"
+      ]
+    }
+  }
+}

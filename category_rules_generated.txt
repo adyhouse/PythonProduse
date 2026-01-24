@@ -1,0 +1,180 @@
+# Auto-generated category rules from MobileSentrix categories
+# Format: keyword|Categoria WooCommerce (hierarhie cu '>')
+
+macbook-pro-unibody-15-a1286-early-2011|Piese de schimb > Apple
+macbook-pro-unibody-17-a1297-early-2009|Piese de schimb > Apple
+macbook-pro-unibody-13-a1278-early-2011|Piese de schimb > Apple
+galaxy-note-10-1-2014-edition-p600-p605|Piese de schimb > Samsung
+pro-15-touch-bar-a1990-a1707-2018-2019|Accesorii > Alte accesorii
+macbook-pro-unibody-15-a1286-late-2008|Piese de schimb > Apple
+macbook-pro-unibody-15-a1286-mid-2009|Piese de schimb > Apple
+macbook-pro-unibody-17-a1297-mid-2010|Piese de schimb > Apple
+macbook-pro-unibody-15-a1286-mid-2010|Piese de schimb > Apple
+macbook-pro-unibody-13-a1278-mid-2009|Piese de schimb > Apple
+macbook-pro-unibody-13-a1278-mid-2010|Piese de schimb > Apple
+galaxy-tab-10-1-p7510-p7500-t859-i905|Piese de schimb > Samsung
+lenovo-smart-tab-m10-hd-2nd-gen-2020|Piese de schimb > Alte piese
+power-testers-iboot-ipower-w103-etc|Accesorii > Alte accesorii
+lg-gpad-f-8-0-v495-uk495-v496-ak495|Piese de schimb > Alte piese
+kindle-fire-hd-8-plus-12th-gen-2022|Piese de schimb > Alte piese
+razr-plus-razr-60-ultra-xt2551-2025|Piese de schimb > Motorola
+mac-studio-a2901-2023-m2-max-ultra|Piese de schimb > Apple
+mac-studio-a2615-2022-m1-max-ultra|Piese de schimb > Apple
+genuine-macbook-replacement-parts|Piese de schimb > Apple
+razr-60-pro-razr-plus-xt2557-2025|Piese de schimb > Motorola
+galaxy-tab-a-8-0-2018-t387w-t387v|Piese de schimb > Samsung
+galaxy-tab-a8-10-5-2021-x200-x205|Piese de schimb > Samsung
+pro-touch-bar-13-a1989-2018-2019|Accesorii > Alte accesorii
+microsoft-surface-book-2-1793-15|Piese de schimb > Alte piese
+mac-pro-rack-a2787-2023-m2-ultra|Piese de schimb > Apple
+galaxy-tab-a-10-1-t510-t515-2019|Piese de schimb > Samsung
+samsung-galaxy-j5-duos-2016-j510|Piese de schimb > Samsung
+alcatel-one-touch-idol-4-dtek50|Piese de schimb > Alte piese
+kindle-fire-hd-10-13th-gen-2023|Piese de schimb > Alte piese
+macbook-air-13-a1466-early-2014|Piese de schimb > Apple
+macbook-air-13-a1466-early-2015|Piese de schimb > Apple
+macbook-air-11-a1465-early-2014|Piese de schimb > Apple
+galaxy-tab-a-8-0-2017-t380-t385|Piese de schimb > Samsung
+air-13-retina-a2179-a1932-2020|Accesorii > Alte accesorii
+air-13-retina-a1932-a2179-2020|Accesorii > Alte accesorii
+motherboard-holders-preheaters|Accesorii > Suport telefon
+kindle-fire-hd-8-12th-gen-2022|Piese de schimb > Alte piese
+lg-gpad-x-8-0-v520-v521wg-v522|Piese de schimb > Alte piese
+macbook-air-13-a1304-late-2008|Piese de schimb > Apple
+macbook-air-11-a1370-late-2010|Piese de schimb > Apple
+macbook-air-13-a1369-late-2010|Piese de schimb > Apple
+macbook-air-13-a1932-late-2018|Piese de schimb > Apple
+moto-g-play-2023-xt2271-5-jk50|Piese de schimb > Motorola
+pro-13-retina-a1425-2012-2013|Accesorii > Alte accesorii
+lenovo-smart-tab-m10-fhd-plus|Piese de schimb > Alte piese
+kindle-fire-hd-8-8th-gen-2018|Piese de schimb > Alte piese
+moto-g06-power-xt2535-10-2025|Piese de schimb > Motorola
+edge-50-fusion-5g-xt2429-2024|Piese de schimb > Motorola
+moto-e7i-power-xt2097-12-2021|Piese de schimb > Motorola
+air-11-a1465-a1370-2012-2015|Accesorii > Alte accesorii
+air-13-a1466-a1369-2012-2017|Accesorii > Alte accesorii
+cable-testers-chargerlab-etc|Accesorii > Incarcatoare
+alcatel-one-touch-pop-4-plus|Piese de schimb > Alte piese
+alcatel-one-touch-idol-3-5-5|Piese de schimb > Alte piese
+microsoft-surface-pro-2-1601|Piese de schimb > Alte piese
+microsoft-surface-pro-4-1724|Piese de schimb > Alte piese
+amazon-kindle-fire-hd-8-2020|Piese de schimb > Alte piese
+microsoft-surface-pro-6-1796|Piese de schimb > Alte piese
+microsoft-surface-pro-3-1631|Piese de schimb > Alte piese
+moto-g-stylus-5g-xt2131-2021|Piese de schimb > Motorola
+moto-g-stylus-5g-xt2315-2023|Piese de schimb > Motorola
+moto-g-stylus-5g-xt2517-2025|Piese de schimb > Motorola
+edge-60-stylus-xt2517-4-2025|Piese de schimb > Motorola
+moto-g-stylus-5g-xt2419-2024|Piese de schimb > Motorola
+galaxy-tab-2-7-0-p3100-p3110|Piese de schimb > Samsung
+samsung-galaxy-j7-prime-g610|Piese de schimb > Samsung
+samsung-galaxy-s24-ultra-5g|Accesorii > Alte accesorii
+controllers-and-peripherals|Accesorii > Alte accesorii
+samsung-galaxy-s25-ultra-5g|Accesorii > Alte accesorii
+coolpad-legacy-5g-2020-3706|Piese de schimb > Alte piese
+lg-stylo-3-plus-tp450-mp450|Piese de schimb > Alte piese
+asus-zenfone-2-ze551ml-z00a|Piese de schimb > Alte piese
+razr-40-ultra-xt2321-3-2023|Piese de schimb > Motorola
+edge-50-ultra-xt2401-2-2024|Piese de schimb > Motorola
+samsung-galaxy-j3-2016-j320|Piese de schimb > Samsung
+samsung-galaxy-note-10-lite|Piese de schimb > Samsung
+galaxy-note-8-0-n5100-n5110|Piese de schimb > Samsung
+galaxy-watch-4-classic-46mm|Piese de schimb > Samsung
+samsung-galaxy-j1-2016-j120|Piese de schimb > Samsung
+tab-s8-ultra-x900-x906-2022|Piese de schimb > Samsung
+samsung-galaxy-tab-s5e-10-5|Piese de schimb > Samsung
+samsung-galaxy-s6-edge-plus|Piese de schimb > Samsung
+samsung-galaxy-j7-2016-j710|Piese de schimb > Samsung
+universal-board-components|Accesorii > Alte accesorii
+pro-touchbar-15-a1707-2017|Accesorii > Alte accesorii
+display-comparison-devices|Accesorii > Alte accesorii
+samsung-galaxy-s25-plus-5g|Accesorii > Alte accesorii
+samsung-galaxy-s24-plus-5g|Accesorii > Alte accesorii
+edge-60-fusion-xt2503-2025|Piese de schimb > Motorola
+moto-g15-power-xt2521-2025|Piese de schimb > Motorola
+moto-g24-power-xt2425-2024|Piese de schimb > Motorola
+tab-active-5-pro-10-1-2025|Piese de schimb > Samsung
+galaxy-a12-nacho-a127-2021|Piese de schimb > Samsung
+retina-12-a1534-2015-2017|Accesorii > Alte accesorii
+one-power-p30-note-xt1942|Piese de schimb > Motorola
+edge-40-neo-xt2307-1-2023|Piese de schimb > Motorola
+edge-30-neo-xt2245-1-2022|Piese de schimb > Motorola
+moto-g50-5g-xt2149-1-2021|Piese de schimb > Motorola
+samsung-galaxy-s23-fe-5g|Accesorii > Alte accesorii
+samsung-galaxy-s22-ultra|Accesorii > Alte accesorii
+pro-retina-13-a1708-2016|Accesorii > Alte accesorii
+face-plates-and-covers-1|Accesorii > Huse
+pixel-tablet-gtu8p-2023|Piese de schimb > Google
+power-cords-and-cables|Accesorii > Cabluri si Adaptori
+glass-separation-tools|Accesorii > Folii protectie
+casper-tempered-glass|Accesorii > Folii protectie
+google-pixel-3-xl-6-3|Piese de schimb > Google
+samsung-note-10-plus|Alte piese
+pixelbook-4k-version|Piese de schimb > Google
+battery-programmers|Accesorii > Baterii externe
+cables-and-chargers|Accesorii > Incarcatoare
+asus-google-nexus-7|Piese de schimb > Google
+google-pixelbook-go|Piese de schimb > Google
+clamps-and-holders|Accesorii > Suport telefon
+google-pixel-5a-5g|Piese de schimb > Google
+google-pixel-3-5-5|Piese de schimb > Google
+google-pixel-4a-5g|Piese de schimb > Google
+google-pixel-3a-xl|Piese de schimb > Google
+alcohol-dispensers|Unelte si consumabile
+thunderbolt-cable|Accesorii > Cabluri si Adaptori
+screen-protectors|Accesorii > Folii protectie
+back-cover-repair|Accesorii > Huse
+external-chargers|Accesorii > Incarcatoare
+google-pixel-2-xl|Piese de schimb > Google
+google-pixel-4-xl|Piese de schimb > Google
+cleaning-supplies|Unelte si consumabile
+disassembly-tools|Unelte si consumabile
+pre-cut-adhesives|Unelte si consumabile
+macbook-chargers|Accesorii > Huse
+clicker-switches|Console jocuri > Nintendo Switch
+pixel-9-pro-fold|Piese de schimb > Google
+pcb-camera-tools|Unelte si consumabile
+lamination-tools|Unelte si consumabile
+battery-testers|Accesorii > Baterii externe
+casper-original|Accesorii > Folii protectie
+pixel-10-pro-xl|Piese de schimb > Google
+google-pixel-3a|Piese de schimb > Google
+google-pixel-4a|Piese de schimb > Google
+watch-chargers|Accesorii > Incarcatoare
+screen-holders|Accesorii > Suport telefon
+clamps-holders|Accesorii > Suport telefon
+pixel-9-pro-xl|Piese de schimb > Google
+google-pixel-2|Piese de schimb > Google
+google-pixel-5|Piese de schimb > Google
+google-pixel-4|Piese de schimb > Google
+recently-added|Unelte si consumabile
+power-adapter|Accesorii > Cabluri si Adaptori
+wall-adapters|Accesorii > Cabluri si Adaptori
+parts-storage|Accesorii > Carduri si Memorii USB
+storage-boxes|Accesorii > Carduri si Memorii USB
+glass-removal|Accesorii > Folii protectie
+macbook-skins|Accesorii > Huse
+series-3-45mm|Piese de schimb > Google
+glue-cleaning|Unelte si consumabile
+adhesive-tape|Unelte si consumabile
+cable-tester|Accesorii > Cabluri si Adaptori
+glass-frames|Accesorii > Folii protectie
+pro-silicone|Accesorii > Huse
+tool-holders|Accesorii > Suport telefon
+flex-cables|Accesorii > Cabluri si Adaptori
+accessories|Accesorii > Cabluri si Adaptori
+sim-testers|Accesorii > Carduri si Memorii USB
+usb-type-c|Accesorii > Cabluri si Adaptori
+headphones|Accesorii > Casti Audio
+lightning|Accesorii > Cabluri si Adaptori
+micro-usb|Accesorii > Cabluri si Adaptori
+pry-tools|Unelte si consumabile
+tool-kits|Unelte si consumabile
+adhesives|Unelte si consumabile
+adapters|Accesorii > Cabluri si Adaptori
+silicone|Accesorii > Huse
+pro-edge|Accesorii > Huse
+nintendo|Console jocuri > Nintendo Switch
+cables|Accesorii > Cabluri si Adaptori
+gapp|Alte piese
+pro|Accesorii > Cabluri si Adaptori

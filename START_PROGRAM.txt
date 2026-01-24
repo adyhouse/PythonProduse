@@ -1,0 +1,120 @@
+================================================================================
+                    INSTRUCȚIUNI LANSARE PROGRAM
+                          MOBILESENTRIX
+================================================================================
+
+✓ PROGRAMELE AU FOST FIXATE!
+
+================================================================================
+                    CUM SĂ LANSEZI PROGRAMUL?
+================================================================================
+
+OPȚIUNEA 1: Cu script .BAT (RECOMANDA])
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Dublu-click pe:
+  • master_extractor.bat      - Pentru a extrage link-uri
+  • import_gui.bat            - Pentru import produse (GUI)
+
+SAU din terminal:
+  .\master_extractor.bat
+  .\import_gui.bat
+
+
+OPȚIUNEA 2: Direct din Python (cu variabilă de mediu)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Terminal PowerShell:
+  $env:PYTHONIOENCODING='utf-8'
+  python master_extractor.py
+  
+  SAU
+  
+  $env:PYTHONIOENCODING='utf-8'
+  python import_gui.py
+
+
+OPȚIUNEA 3: Setează variabila global
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Windows System Settings:
+  1. Deschide: Control Panel → System → Environment Variables
+  2. Click: "New..." → Add Variable
+  3. Variable Name: PYTHONIOENCODING
+  4. Variable Value: utf-8
+  5. Click OK și reîncarcă terminalul
+  
+  Apoi poți rula direct:
+    python master_extractor.py
+    python import_gui.py
+
+================================================================================
+                        RAPID START
+================================================================================
+
+CEA MAI SIMPLĂ CALE:
+
+  1. Deschide File Explorer
+  2. Du-te în: c:\program preluate prodsue\
+  3. Dublu-click pe: master_extractor.bat
+  
+  ➜ Se va deschide meniu interactiv
+  ➜ Urmează opțiunile din meniu
+
+================================================================================
+                    FLOWCHART COMPLET
+================================================================================
+
+1. Lansează master_extractor.bat
+   ├─ Opțiunea 1: Generează URL-uri categoriilor
+   │  └─ Creează: category_config.txt
+   │
+   ├─ Opțiunea 2: Extrage link-urile
+   │  └─ Creează: category_links.csv
+   │
+   └─ Opțiunea 5: Export pentru import_gui
+      └─ Update: sku_list.txt
+
+2. Lansează import_gui.bat
+   ├─ Se deschide GUI
+   ├─ Click butonul "Importa"
+   └─ Creează: export_produse.csv
+
+FINALIZAT! ✓
+
+================================================================================
+                        COMENZI RAPIDE
+================================================================================
+
+# Lansează master extractor (extrage link-uri):
+.\master_extractor.bat
+
+# Lansează import GUI (import produse):
+.\import_gui.bat
+
+# Sau cu Python direct (dacă ai setat PYTHONIOENCODING):
+$env:PYTHONIOENCODING='utf-8'; python master_extractor.py
+$env:PYTHONIOENCODING='utf-8'; python import_gui.py
+
+================================================================================
+                    TROUBLESHOOTING
+================================================================================
+
+P: .bat file nu rulează
+R: Asigură-te că ești în directorul corect
+   cd "c:\program preluate prodsue"
+   .\master_extractor.bat
+
+P: GUI nu se deschide
+R: Verifică că ai tkinter instalat
+   python -m tkinter (ar trebui să apară o fereastră)
+
+P: Caractere ciudate în output
+R: Variabila PYTHONIOENCODING nu e setată corect
+   Folosește .bat file care o setează automat
+
+================================================================================
+
+✓ SISTEM GATA PENTRU UTILIZARE!
+
+================================================================================

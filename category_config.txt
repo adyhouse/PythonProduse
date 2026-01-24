@@ -1,0 +1,51 @@
+# Category Links Extractor Configuration
+# Format: category_name | category_url
+# Updated 2026-01-15: Changed from /accessories/ to /replacement-parts/ structure
+
+# Apple - iPhone Parts
+Apple - iPhone | https://www.mobilesentrix.eu/replacement-parts/apple/iphone-parts/
+
+# Apple - iPad Parts
+Apple - iPad | https://www.mobilesentrix.eu/replacement-parts/apple/ipad-parts/
+
+# Apple - MacBook Parts
+Apple - MacBook | https://www.mobilesentrix.eu/replacement-parts/apple/macbook-parts/
+
+# Apple - Watch Parts
+Apple - Watch | https://www.mobilesentrix.eu/replacement-parts/apple/watch-parts/
+
+# Samsung - Galaxy S
+Samsung - Galaxy S | https://www.mobilesentrix.eu/replacement-parts/samsung/galaxy-s-parts/
+
+# Samsung - Galaxy Note
+Samsung - Galaxy Note | https://www.mobilesentrix.eu/replacement-parts/samsung/galaxy-note-parts/
+
+# Samsung - Galaxy A
+Samsung - Galaxy A | https://www.mobilesentrix.eu/replacement-parts/samsung/galaxy-a-parts/
+
+# Samsung - Galaxy Z
+Samsung - Galaxy Z | https://www.mobilesentrix.eu/replacement-parts/samsung/galaxy-z-parts/
+
+# Samsung - Galaxy Tab
+Samsung - Galaxy Tab | https://www.mobilesentrix.eu/replacement-parts/samsung/galaxy-tab-parts/
+
+# Motorola
+Motorola | https://www.mobilesentrix.eu/replacement-parts/motorola/
+
+# Google Pixel
+Google Pixel | https://www.mobilesentrix.eu/replacement-parts/google/pixel-parts/
+
+# Huawei
+Huawei | https://www.mobilesentrix.eu/replacement-parts/huawei/
+
+# OnePlus
+OnePlus | https://www.mobilesentrix.eu/replacement-parts/oneplus/
+
+# Xiaomi
+Xiaomi | https://www.mobilesentrix.eu/replacement-parts/xiaomi/
+
+# Sony
+Sony | https://www.mobilesentrix.eu/replacement-parts/sony/
+
+# LG
+LG | https://www.mobilesentrix.eu/replacement-parts/lg/

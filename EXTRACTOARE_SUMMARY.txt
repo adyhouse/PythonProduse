@@ -1,0 +1,299 @@
+================================================================================
+                   SUMMAR - SCRIPTURI EXTRACTOARE CREATE
+                          MOBILESENTRIX
+================================================================================
+
+✓ SUCCES! Am creat 5 scripturi Python SEPARATE pentru a extrage link-urile pe
+categorii din MobileSentrix.
+
+================================================================================
+                        SCRIPTURI DISPONIBILE
+================================================================================
+
+1. 🌟 master_extractor.py
+   - Meniu interactiv (START HERE!)
+   - Ghidează utilizatorul pas cu pas
+   - Integreaza toate funcționalitățile
+
+2. category_url_generator.py
+   - Generează URL-uri categoriilor
+   - Testează validitate fiecare URL
+   - Creează category_config.txt
+
+3. extractor_category_links.py
+   - Extrage link-uri cu paginație automată
+   - Suportă retry logic
+   - Exportă CSV + JSON
+
+4. extractor_from_csv.py
+   - Organizează link-uri existente
+   - Clasifică automat pe categorii
+   - Acceptă CSV și text files
+
+5. extractor_selenium.py
+   - Browser automat (pentru Cloudflare/JS)
+   - Necesită: pip install selenium webdriver-manager
+
+================================================================================
+                        CARE SCRIPT SĂ RULEZ?
+================================================================================
+
+🎯 RĂSPUNS SCURT: master_extractor.py
+
+  python master_extractor.py
+  
+  ➜ Se deschide meniu interactiv
+  ➜ Alegi opțiunile pe care le vrei
+  ➜ Meniu te ghidează în fiecare pas
+
+================================================================================
+                        CUM FUNCȚIONEAZĂ
+================================================================================
+
+PASUL 1: Generează URL-urile (validare)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  master_extractor.py -> Opțiunea 1
+  
+  Ce face:
+  - Generează URL-uri pentru Apple, Samsung, Motorola, etc.
+  - Testează fiecare URL (validare)
+  - Creează: category_config.txt cu URL-uri valide
+
+  Exemplu output:
+    [OK] Apple - iPhone        -> https://www.mobilesentrix.eu/accessories/apple-iphone/
+    [OK] Apple - iPad          -> https://www.mobilesentrix.eu/accessories/apple-ipad/
+    ...
+
+
+PASUL 2: Extrage link-urile din categorii
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  master_extractor.py -> Opțiunea 2
+  
+  Ce face:
+  - Citește: category_config.txt
+  - Pentru fiecare categorie:
+    ✓ Descarcă: pagina 1, 2, 3... cu paginație
+    ✓ Extrage: toate link-urile de produse
+    ✓ Salvează: link-urile în memorie
+  - Exportă: category_links.csv și category_links.json
+
+  Exemplu output:
+    [*] Categorie: Apple - iPhone
+        [*] Pagina 1... 150 produse
+        [*] Pagina 2... 150 produse
+        [*] Pagina 3... 140 produse
+        [+] Total: 440 produse
+    
+    [*] Categorie: Apple - iPad
+    ...
+
+
+PASUL 3: Exportă pentru import_gui.py
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  master_extractor.py -> Opțiunea 5
+  
+  Ce face:
+  - Citește: category_links.csv
+  - Copiază link-urile în: sku_list.txt
+  - Gata pentru import_gui.py!
+
+  Exemplu:
+    [+] Exportat 1250 link-uri în: sku_list.txt
+
+
+PASUL 4: Rulează import_gui.py
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python import_gui.py
+  
+  Ce face:
+  - Citește: sku_list.txt cu link-urile
+  - Pentru fiecare link:
+    ✓ Descarcă: produs (nume, preț, descriere)
+    ✓ Descarcă: imagini în folder local
+    ✓ Uploadează: imagini pe WordPress Media
+    ✓ Salvează: datele în memorie
+  - Exportă: export_produse.csv cu:
+    ├─ Categoria: "Apple - iPhone" (din linkul original!)
+    ├─ Imagini: URL-uri WordPress (nu local)
+    ├─ Preț EUR/RON
+    ├─ Descriere
+    └─ EAN, SKU, Brand
+
+  Rezultat final:
+    ✓ CSV complet și gat pentru WooCommerce
+    ✓ Imagini pe WordPress
+    ✓ Categorii detectate automat
+
+================================================================================
+                        FIȘIERELE GENERATE
+================================================================================
+
+După urmarea pașilor:
+
+category_config.txt
+  - Configurație cu URL-urile categoriilor
+  - Generat de: category_url_generator.py
+  - Editable manual
+
+category_links.csv
+  - Link-urile pe categorii
+  - Format: Categoria | Link Produs
+  - Generat de: extractor_category_links.py
+
+sku_list.txt
+  - Updatat cu link-urile din CSV
+  - Gat pentru import_gui.py
+
+export_produse.csv
+  - Finala cu toate detaliile
+  - Generat de: import_gui.py
+  - Gat pentru WooCommerce
+
+================================================================================
+                        EXEMPLE COMENZI
+================================================================================
+
+# 1. Lansare meniu principal (RECOMANDA])
+python master_extractor.py
+
+# 2. Generează URL-urile direct
+python category_url_generator.py
+
+# 3. Extrage link-urile din categorii
+python extractor_category_links.py
+
+# 4. Organizează link-uri existente
+python extractor_from_csv.py produse.csv
+
+# 5. Rulează import_gui cu link-urile
+python import_gui.py
+
+================================================================================
+                        INTEGRARE CU IMPORT_GUI
+================================================================================
+
+Fluxul complet:
+
+  master_extractor.py (extrage link-uri pe categorii)
+          ↓
+  category_links.csv (link-urile organizate)
+          ↓
+  Copiază în sku_list.txt
+          ↓
+  import_gui.py (descarcă produse + imagini)
+          ↓
+  export_produse.csv (FINALA!)
+
+Rezultat: CSV-ul final va conține CATEGORIA pentru fiecare produs!
+
+================================================================================
+                        TIMP ESTIMAT
+================================================================================
+
+Opțiunea 1 (generează URL-urile):      ~1-2 minute
+Opțiunea 2 (extrage link-uri):         ~5-15 minute
+                                       (depinde de nr. categorii și pagini)
+Opțiunea 5 (export):                   <1 minut
+Import_gui.py (descarcă produse):      ~30-60 minute
+                                       (depinde de nr. link-uri și viteza net)
+
+Total: 45-90 minute pentru procesul complet
+
+================================================================================
+                        TROUBLESHOOTING RAPID
+================================================================================
+
+P: Script-ul nu extrage link-uri
+R: 
+  1. Verifică URL-urile din category_config.txt în browser
+  2. Dacă nu se deschide, site-ul s-a schimbat
+  3. Rulez opțiunea 1 din master_extractor.py pentru a regenera
+
+P: Import_gui.py nu găsește link-urile
+R:
+  1. Verifica sku_list.txt - sunt link-urile acolo?
+  2. Copiază manual din category_links.csv în sku_list.txt
+  3. Rulează opțiunea 5 din master_extractor.py pentru export
+
+P: Imagini nu se uploadează pe WordPress
+R:
+  1. Verifica .env - are WP_APP_PASSWORD?
+  2. Testează Application Password din WordPress admin
+  3. Vezi GHID complet din START_HERE_EXTRACTOARE.txt
+
+P: Rate limiting (429 errors)
+R:
+  1. Scripturile au retry logic automat
+  2. Asteapta 30 minute și reîncearcă
+  3. Alte periodă a zilei (mai puțini utilizatori)
+
+================================================================================
+                        SIGURANȚĂ ȘI LIMITAȚII
+================================================================================
+
+Important de știut:
+✓ Scripturile sunt legale (web scraping pentru uso personal/comercial)
+✓ Respectă rate limiting (delays între requests)
+✓ Nu blochează serverul (sunt delays de 0.3-1 secunde)
+✓ Suportă retry automat (Cloudflare, timeout, etc.)
+✗ Site-ul se poate schimba (URL-uri noi, structură diferită)
+✗ Cloudflare poate bloca (folosește extractor_selenium.py atunci)
+
+================================================================================
+                        DOCUMENTE DISPONIBILE
+================================================================================
+
+Pentru informații mai detaliate:
+
+1. START_HERE_EXTRACTOARE.txt
+   - Ghid complet cu workflow
+   - Explicații pas cu pas
+
+2. README_EXTRACTOARE.txt
+   - Tehnic și opțiuni avansate
+   - Detalii scripturi
+
+3. GHID_EXTRACTOARE.txt
+   - Referință detaliată
+   - Troubleshooting extins
+
+================================================================================
+                        COMMAND QUICK REFERENCE
+================================================================================
+
+Lansare meniu:
+  python master_extractor.py
+
+Opțiuni meniu:
+  1 = Generează URL-urile
+  2 = Extrage din categorii
+  3 = Organizează din CSV
+  4 = Vizualizează link-uri
+  5 = Export pentru import_gui
+  6 = Ghid complet
+  0 = Ieșire
+
+================================================================================
+                        URMĂTORII PAȘI
+================================================================================
+
+1. Rulează: python master_extractor.py
+2. Apasă 1 pentru a genera URL-urile
+3. Apasă 2 pentru a extrage link-urile
+4. Apasă 5 pentru a exporta în sku_list.txt
+5. Rulează: python import_gui.py
+6. Click "Importa" și asteaptă
+
+Gata! CSV-ul final va fi: export_produse.csv
+
+================================================================================
+
+Versiune: 1.0
+Creat: Ianuarie 2026
+Status: COMPLET ✓
+
+================================================================================

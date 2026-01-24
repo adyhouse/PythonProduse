@@ -1,0 +1,145 @@
+════════════════════════════════════════════════════════════════════════════
+        COPY-PASTE SQL CLEANUP - wc_product_meta_lookup Orphaned Entries
+════════════════════════════════════════════════════════════════════════════
+
+🚨 INSTRUCȚIUNI URGENTE:
+────────────────────────
+
+1. Deschide phpMyAdmin
+2. Selectează baza de date: wordpress
+3. Click pe SQL tab (top menu)
+4. COPIAZĂ și RULEAZĂ FIECARE BLOC SeparaT (un bloc o dată!)
+5. Așteptă "Query executed successfully" după fiecare
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 1: BACKUP - Crează backup înainte (siguranta)
+─────────────────────────────────────────────────
+
+CREATE TABLE wplt_wc_product_meta_lookup_BACKUP_20260115 AS 
+SELECT * FROM wplt_wc_product_meta_lookup;
+
+-- Rezultat: "X rows copied" ✓
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 2: DIAGNOZA - Verifică câte orphaned entries sunt
+───────────────────────────────────────────────────────
+
+SELECT 
+    pl.product_id,
+    pl.sku,
+    CASE WHEN p.ID IS NULL THEN 'ORPHANED' ELSE 'OK' END as Status,
+    COUNT(*) as Duplicates
+FROM wplt_wc_product_meta_lookup pl
+LEFT JOIN wplt_posts p ON pl.product_id = p.ID
+WHERE pl.product_id > 5000  -- Only recent ones
+GROUP BY pl.product_id, pl.sku
+HAVING COUNT(*) > 1 OR p.ID IS NULL
+ORDER BY pl.product_id DESC;
+
+-- Acest SELECT DOAR CITESTE, nu modifica nimic!
+-- Vei vedea un tabel cu orphaned entries
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 3: CLEAN - Șterge duplicate entries din meta_lookup
+──────────────────────────────────────────────────────────
+
+DELETE FROM wplt_wc_product_meta_lookup 
+WHERE product_id IN (
+    SELECT DISTINCT product_id FROM wplt_wc_product_meta_lookup 
+    WHERE product_id NOT IN (
+        SELECT ID FROM wplt_posts WHERE post_type = 'product'
+    )
+);
+
+-- Rezultat: "X rows affected" - Orfanele au fost șterse!
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 4: REMOVE PHANTOM POSTS - Șterge products din wp_posts care NU au meta
+─────────────────────────────────────────────────────────────────────────
+
+DELETE FROM wplt_posts 
+WHERE post_type = 'product' 
+AND ID IN (5146, 5147, 5148, 5149, 5150)
+AND ID NOT IN (
+    SELECT DISTINCT product_id FROM wplt_wc_product_meta_lookup
+);
+
+-- Rezultat: "X rows affected" - Phantom products șterse!
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 5: CLEAN POSTMETA - Șterge orphaned meta entries din wp_postmeta
+───────────────────────────────────────────────────────────────────
+
+DELETE FROM wplt_postmeta 
+WHERE post_id NOT IN (
+    SELECT ID FROM wplt_posts
+);
+
+-- Rezultat: "X rows affected"
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 6: REPAIR TABLE - Repară și optimizează
+──────────────────────────────────────────────
+
+REPAIR TABLE wplt_wc_product_meta_lookup;
+OPTIMIZE TABLE wplt_wc_product_meta_lookup;
+REPAIR TABLE wplt_posts;
+OPTIMIZE TABLE wplt_posts;
+
+-- Rezultat: Table op did produce some warnings (normal!)
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 7: RESET AUTO_INCREMENT
+──────────────────────────────
+
+ALTER TABLE wplt_posts AUTO_INCREMENT = 5151;
+
+-- (sau orice valoare > MAX(ID) din table)
+-- Rezultat: "Affected rows: 0" (normal!)
+
+════════════════════════════════════════════════════════════════════════════
+
+BLOC 8: VERIFICARE FINALĂ - Confirmă cleanup
+─────────────────────────────────────────────
+
+SELECT 
+    COUNT(*) as 'Total Products',
+    COUNT(DISTINCT product_id) as 'Unique IDs'
+FROM wplt_wc_product_meta_lookup;
+
+SELECT MAX(ID) as 'Max Product ID' FROM wplt_posts WHERE post_type='product';
+
+SELECT COUNT(*) as 'Orphaned in meta_lookup'
+FROM wplt_wc_product_meta_lookup 
+WHERE product_id NOT IN (
+    SELECT ID FROM wplt_posts WHERE post_type = 'product'
+);
+
+-- Rezultat final: Orphaned count TREBUIE să fie 0!
+
+════════════════════════════════════════════════════════════════════════════
+
+DUPĂ CLEANUP - SUCCESUL!
+────────────────────────
+
+✅ Tabelul e repair-uit
+✅ Orphaned entries sunt șterse
+✅ AUTO_INCREMENT e reset
+✅ ACUM poți relansa import!
+
+RELANSARE IMPORT:
+─────────────────
+
+cd c:\program preluate prodsue
+START_PROGRAM.bat
+
+Ar trebui să meargă! 🚀
+
+════════════════════════════════════════════════════════════════════════════

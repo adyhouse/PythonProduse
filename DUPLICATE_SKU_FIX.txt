@@ -1,0 +1,428 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║           ✅ REZOLVAT - GESTIONARE PRODUSE DUPLICATE (SKU)                 ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+🔴 PROBLEMA ACTUALIZATĂ (Ianuarie 2026):
+════════════════════════════════════════════════════════════════════════════
+
+Eroare primită:
+✗ Eroare WooCommerce: Status 400
+📝 Eroare la baza de date WordPress: [Duplicate entry '5074' for key 'PRIMARY']
+
+Cauză: INTRĂRI ORFANE în baza de date!
+• Produsul NU apare în WooCommerce (Admin → Produse)
+• DAR există înregistrări șterse incomplet în MySQL
+• Tabele afectate: wp_wc_product_meta_lookup, wp_postmeta, wp_posts
+
+De ce se întâmplă?
+• Ștergere incompletă de produse (nu permanent din Trash)
+• Crash-uri server în timpul creării produselor
+• Probleme cu plugin-uri care lasă date reziduale
+• Conflicte între SKU și ID-uri auto-increment
+
+
+✅ SOLUȚIA IMPLEMENTATĂ ÎN PROGRAM:
+════════════════════════════════════════════════════════════════════════════
+
+Programul acum:
+
+1️⃣ FOLOSEȘTE EAN pentru identificare furnizor
+   • EAN de pe MobileSentrix → salvat în meta_data (_ean)
+   • SKU generat automat → format: WEBGSM-{EAN_ultimi6}-{timestamp}
+   • Nu mai folosește EAN ca SKU (evită conflicte)
+
+2️⃣ VERIFICARE EXTINSĂ înainte de creare
+   • Caută după EAN în meta_data
+   • Caută după SKU generat (detectează orfane)
+   • Verifică în max 100 produse recent create
+
+3️⃣ MECANISM DE RETRY pentru SKU duplicat
+   • Dacă primește "Duplicate entry"
+   • Generează automat SKU nou (timestamp diferit)
+   • Reîncearcă până la 3 ori
+   • Evită blocarea importului
+
+4️⃣ ACTUALIZARE produse existente
+   • Dacă găsește EAN identic în meta_data
+   • Actualizează: preț, descriere, imagini, stoc
+   • Păstrează ID-ul și SKU-ul original
+   • Checkbox: "✅ Actualizează produse existente"
+
+5️⃣ MESAJE DETALIATE pentru debugging
+   • Arată SKU generat pentru fiecare produs
+   • Indică dacă este duplicat sau actualizare
+   • Sugestii concrete pentru fiecare tip de eroare
+
+
+🛠 REZOLVARE MANUALĂ (pentru intrări orfane persistente):
+════════════════════════════════════════════════════════════════════════════
+
+METODA 1: Curățare prin phpMyAdmin (RECOMANDAT)
+───────────────────────────────────────────────────────────────────────────
+
+1. Deschide phpMyAdmin în hosting
+   • cPanel → phpMyAdmin
+   • Selectează baza de date WordPress
+
+2. Rulează scriptul SQL de curățare
+   • Fișier: CURATA_BAZA_DATE.sql
+   • Conține comenzi pentru:
+     ✓ Găsire produse șterse incomplet
+     ✓ Șterge intrări orfane din wp_wc_product_meta_lookup
+     ✓ Curăță wp_postmeta de înregistrări invalide
+     ✓ Optimizează tabele
+
+3. Pași detaliați:
+   a) Fă BACKUP la baza de date (Export → SQL)
+   b) Rulează comenzile SELECT (vezi ce există)
+   c) Decomentează comenzile DELETE
+   d) Rulează comenzile de curățare
+   e) Rulează OPTIMIZE TABLE
+
+
+METODA 2: Plugin WordPress (CEA MAI SIGURĂ)
+───────────────────────────────────────────────────────────────────────────
+
+1. Instalează plugin "Advanced Database Cleaner"
+   WordPress Admin → Plugins → Add New → Caută "Advanced Database Cleaner"
+
+2. Curăță date orfane:
+   Settings → Database Cleaner → Clean-up
+   ✓ Orphan Post Meta
+   ✓ Orphan Product Data
+   ✓ Auto-drafts
+   ✓ Trashed items
+
+3. Rebuild WooCommerce data:
+   WooCommerce → Status → Tools
+   ✓ "Clear product/shop transients" → Run
+   ✓ "Regenerate shop thumbnails" → Run
+
+
+METODA 3: WP-CLI (pentru access SSH)
+───────────────────────────────────────────────────────────────────────────
+
+wp post delete $(wp post list --post_type='product' --post_status='trash' --format=ids) --force
+wp wc tool run clear_transients --user=admin
+wp db query "DELETE FROM wp_wc_product_meta_lookup WHERE product_id NOT IN (SELECT ID FROM wp_posts)"
+
+
+METODA 4: Șterge manual produsul specific
+───────────────────────────────────────────────────────────────────────────
+
+1. Găsește ID-ul produsului care dă eroare:
+   SELECT * FROM wp_wc_product_meta_lookup WHERE sku LIKE 'WEBGSM-%';
+
+2. Șterge toate referințele:
+   DELETE FROM wp_posts WHERE ID = 5074;
+   DELETE FROM wp_postmeta WHERE post_id = 5074;
+   DELETE FROM wp_wc_product_meta_lookup WHERE product_id = 5074;
+   DELETE FROM wp_term_relationships WHERE object_id = 5074;
+
+
+🎯 PREVENIRE VIITOARE:
+════════════════════════════════════════════════════════════════════════════
+
+1. Șterge produse PERMANENT din Trash
+   • WooCommerce → Produse → Trash
+   • Selectează toate → "Delete permanently"
+   • NU lăsa produse în Trash
+
+2. Folosește plugin-uri de curățare regulată
+   • WP-Optimize (săptămânal)
+   • Advanced Database Cleaner (lunar)
+
+3. Backup regulat
+   • Înainte de import masiv
+   • Plugin: UpdraftPlus sau BackupBuddy
+
+4. Monitorizare erori
+   • Activează WordPress Debug: WP_DEBUG = true
+   • Verifică wp-content/debug.log
+
+5. Optimizare bază de date
+   • phpMyAdmin → Operations → Optimize table
+   • Sau plugin: WP-Optimize
+
+
+📋 CHECKLIST DEBUGGING:
+════════════════════════════════════════════════════════════════════════════
+
+Dacă primești în continuare "Duplicate entry":
+
+□ Am verificat că produsul NU există în WooCommerce Admin
+□ Am șters toate produsele din Trash (permanent)
+□ Am rulat scriptul SQL de curățare (CURATA_BAZA_DATE.sql)
+□ Am verificat wp_wc_product_meta_lookup pentru SKU-uri duplicate
+□ Am optimizat tabelele MySQL (OPTIMIZE TABLE)
+□ Am golit cache-ul WooCommerce (Clear transients)
+□ Am testat cu un EAN complet NOU
+□ Am verificat că SKU generat este unic (WEBGSM-XXXXXX-YYYY)
+□ Am activat opțiunea "Actualizează produse existente"
+□ Am verificat log-urile pentru mesaje detaliate
+
+
+🔗 FIȘIERE UTILE:
+════════════════════════════════════════════════════════════════════════════
+
+• CURATA_BAZA_DATE.sql → Script SQL pentru curățare
+• logs/ → Log-uri detaliate cu SKU-uri generate
+• import_gui.py → Cod sursă cu mecanism retry
+
+
+💡 AJUTOR SUPLIMENTAR:
+════════════════════════════════════════════════════════════════════════════
+
+Dacă problema persistă:
+
+1. Trimite următoarele informații:
+   • Ultimul fișier din logs/ (logs/import_YYYYMMDD_HH-MM.log)
+   • Rezultatul comenzii SQL:
+     SELECT * FROM wp_wc_product_meta_lookup WHERE sku LIKE 'WEBGSM-%';
+   • Versiunea WooCommerce (WooCommerce → Status)
+
+2. Verifică:
+   • Memory limit PHP >= 256MB
+   • Max execution time >= 300
+   • Plugin-uri care modifică produse (dezactivează temporar)
+
+
+════════════════════════════════════════════════════════════════════════════
+Ultima actualizare: 14 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════
+
+
+
+✅ SOLUȚIA IMPLEMENTATĂ:
+════════════════════════════════════════════════════════════════════════════
+
+Programul acum:
+
+1️⃣ VERIFICĂ automat dacă SKU-ul există
+   • Înainte de a crea produs nou
+   • Caută în WooCommerce după SKU
+   • Arată mesaj dacă găsește duplicat
+
+2️⃣ ACTUALIZEAZĂ produsul existent
+   • În loc să dea eroare
+   • Actualizează: preț, descriere, imagini, stoc
+   • Păstrează ID-ul produsului original
+
+3️⃣ OPȚIUNE CONFIGURABILĂ
+   • Checkbox în interfață: 
+     "✅ Actualizează produse existente (dacă SKU există deja)"
+   • Implicit: ACTIVAT (actualizează automat)
+   • Dezactivat: Sare peste produse duplicate
+
+
+🎯 CUM FUNCȚIONEAZĂ ACUM:
+════════════════════════════════════════════════════════════════════════════
+
+FLUXUL DE IMPORT:
+
+┌─────────────────────────────────────┐
+│  1. Citește SKU din fișier          │
+│     Exemplu: 107182113502           │
+└────────────┬────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────┐
+│  2. Scraping date de pe             │
+│     mobilesentrix.eu                │
+└────────────┬────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────┐
+│  3. 🔍 Verifică în WooCommerce      │
+│     "Există SKU 107182113502?"      │
+└────────────┬────────────────────────┘
+             │
+         ┌───┴───┐
+         │       │
+    NU   │       │   DA
+         ▼       ▼
+   ┌─────────┐  ┌──────────────────────┐
+   │ CREEAZĂ │  │ ACTUALIZEAZĂ         │
+   │ PRODUS  │  │ produsul existent    │
+   │ NOU     │  │ (dacă opțiunea e ON) │
+   └─────────┘  └──────────────────────┘
+
+
+📋 MESAJE ÎN LOG:
+════════════════════════════════════════════════════════════════════════════
+
+Când produsul NU există:
+   🔍 Verific dacă SKU 107182113502 există deja...
+   ✓ SKU nou, creez produs
+   📤 Creez produs nou în WooCommerce...
+   ✓ Produs creat cu succes! ID: 5075
+
+Când produsul EXISTĂ (cu actualizare activată):
+   🔍 Verific dacă SKU 107182113502 există deja...
+   ⚠️ Produs există deja (ID: 5074)
+   🔄 Actualizez produsul existent...
+   ✓ Produs actualizat cu succes! ID: 5074
+
+Când produsul EXISTĂ (cu actualizare dezactivată):
+   🔍 Verific dacă SKU 107182113502 există deja...
+   ⚠️ Produs există deja (ID: 5074)
+   ⏭️ Sar peste produs (actualizare dezactivată)
+
+
+🎨 INTERFAȚĂ ACTUALIZATĂ:
+════════════════════════════════════════════════════════════════════════════
+
+Tab "📦 Import Produse" → Opțiuni Import:
+
+☑ Descarcă toate imaginile produsului
+☑ Optimizează imaginile (resize)
+☑ Convertește prețul EUR → RON
+☑ Extrage descriere în română
+☑ Actualizează produse existente (dacă SKU există deja)  ← NOU!
+
+
+💡 CÂND SĂ FOLOSEȘTI FIECARE OPȚIUNE:
+════════════════════════════════════════════════════════════════════════════
+
+✅ ACTUALIZARE ACTIVATĂ (Recomandat):
+────────────────────────────────────────────────────────────────────────────
+• Pentru actualizări periodice de preț
+• Pentru sincronizare stoc
+• Pentru actualizare imagini/descrieri
+• Pentru re-import după modificări
+
+Exemplu: Rulezi import zilnic pentru a actualiza prețurile
+
+
+❌ ACTUALIZARE DEZACTIVATĂ:
+────────────────────────────────────────────────────────────────────────────
+• Pentru import inițial (prima dată)
+• Când vrei doar produse noi
+• Când produsele existente au modificări manuale pe care nu vrei să le pierzi
+
+Exemplu: Adaugi doar produse noi în catalog, fără să modifici cele existente
+
+
+⚠️ ATENȚIE LA PRODUSE EXISTENTE:
+════════════════════════════════════════════════════════════════════════════
+
+Dacă ai modificat MANUAL în WooCommerce:
+• Descrieri personalizate
+• Imagini custom
+• Prețuri negociate
+• Detalii SEO
+
+→ DEZACTIVEAZĂ actualizarea pentru a nu pierde modificările!
+
+
+🔧 CE SE ACTUALIZEAZĂ:
+════════════════════════════════════════════════════════════════════════════
+
+Când programul actualizează un produs existent:
+
+✅ Actualizează:
+• Nume produs
+• Preț (cu conversie EUR → RON)
+• Descriere
+• Imagini (galerie completă)
+• Stoc (cantitate)
+• Status (publish)
+
+❌ NU actualizează (păstrează originalul):
+• SKU (rămâne același)
+• ID produs (rămâne același)
+• Categorii (dacă au fost setate manual)
+• Atribute custom
+• Review-uri
+• Istoric vânzări
+
+
+🐛 REZOLVARE EROARE 400 - DUPLICATE ENTRY:
+════════════════════════════════════════════════════════════════════════════
+
+Dacă tot primești eroarea, înseamnă că:
+
+1. Opțiunea de actualizare e dezactivată
+   SOLUȚIE: Activează checkbox-ul din interfață
+
+2. Produsul există dar verificarea a eșuat
+   SOLUȚIE: Verifică conexiunea API
+
+3. Baza de date are inconsistențe
+   SOLUȚIE: 
+   a) Găsește produsul în WooCommerce → Products
+   b) Caută după SKU: 107182113502
+   c) Șterge produsul
+   d) Încearcă din nou importul
+
+
+📊 STATISTICI IMPORT:
+════════════════════════════════════════════════════════════════════════════
+
+La final, programul afișează:
+
+📊 SUMAR IMPORT:
+   ✓ Produse create: 15
+   🔄 Produse actualizate: 8
+   ⏭️ Produse sărite: 2
+   ✗ Erori: 1
+   📦 Total procesate: 26
+
+
+🚀 UTILIZARE:
+════════════════════════════════════════════════════════════════════════════
+
+PASUL 1: Pornește programul
+   START_PROGRAM.bat
+
+PASUL 2: Tab "📦 Import Produse"
+
+PASUL 3: Verifică opțiunile:
+   ☑ Actualizează produse existente  ← Bifează sau debifează
+
+PASUL 4: Alege fișier SKU
+   • sku_list.txt (default)
+   • sau alt fișier
+
+PASUL 5: Click "🚀 START IMPORT"
+
+PASUL 6: Urmărește în Log:
+   • Mesaje 🔍 pentru verificări
+   • Mesaje 🔄 pentru actualizări
+   • Mesaje ✓ pentru succese
+
+
+💾 BACKUP RECOMANDAT:
+════════════════════════════════════════════════════════════════════════════
+
+Înainte de import masiv cu actualizare:
+
+1. Backup bază de date WooCommerce
+   • Plugins → All-in-One WP Migration → Export
+   SAU
+   • cPanel → phpMyAdmin → Export database
+
+2. Testează cu 2-3 produse mai întâi
+
+3. Verifică rezultatele în WooCommerce
+
+4. Dacă e OK, rulează importul complet
+
+
+🎉 REZULTAT:
+════════════════════════════════════════════════════════════════════════════
+
+✅ Nu mai primești erori "Duplicate entry"
+✅ Produsele existente se actualizează automat
+✅ Control complet prin checkbox
+✅ Log-uri detaliate pentru fiecare acțiune
+✅ Import poate rula zilnic pentru sincronizare
+
+
+════════════════════════════════════════════════════════════════════════════
+Actualizat: 14 Ianuarie 2026
+Versiune program: 2.1 cu gestionare duplicate SKU
+════════════════════════════════════════════════════════════════════════════

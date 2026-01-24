@@ -1,0 +1,230 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║     🧹 CURĂȚARE AUTOMATĂ - PRODUSE ORFANE ÎN WOOCOMMERCE                    ║
+║                                                                            ║
+║  PROBLEMA: Produsul ID 5081 (și similare) sunt PARȚIAL CREATE             ║
+║  CAUZA: WooCommerce creează ID dar eșuează la INSERT SKU în meta_lookup    ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+🔴 SITUAȚIA ACTUALĂ:
+════════════════════════════════════════════════════════════════════════════
+
+Fișierul log arată:
+  ✗ Duplicate entry '5081' for key 'PRIMARY'
+  
+Asta înseamnă:
+  1. POST #1: Creează ID 5081 în wp_posts ✓
+             Dar eșuează la INSERT sku în wp_wc_product_meta_lookup ✗
+  
+  2. POST #2: Încearcă iarăși cu alt SKU
+             Auto_increment dă iarăși ID 5081 (pt că nu s-a salvat)
+             Conflict PRIMARY KEY! ✗
+  
+  3. POST #3: Același lucru ✗
+
+SOLUȚIE: Șterge ID-ul orfan 5081 pentru a elibera locul
+
+
+🛠️ CUM SE REZOLVĂ:
+════════════════════════════════════════════════════════════════════════════
+
+METODA 1: SCRIPT PHP AUTOMAT (RECOMANDAT) ⭐
+───────────────────────────────────────────────────────────────────────────
+
+1. Upload scriptul pe server:
+   • Fișier: curata_orfane.php
+   • Locație: /wp-content/ pe serverul tău
+   
+   PENTRU WEBGSM:
+   - FTP Connection (via cPanel)
+   - Conectează-te ca admin
+   - Merge la: public_html/wp-content/
+   - Upload curata_orfane.php
+
+2. Rulează scriptul din browser:
+   • URL: https://webgsm.ro/wp-content/curata_orfane.php
+   
+   Script-ul va:
+   ✓ Găsi toate produsele fără înregistrare în meta_lookup
+   ✓ Le șterge automat
+   ✓ Resetează AUTO_INCREMENT
+   ✓ Verifică pentru SKU-uri duplicate
+   ✓ Arată raport final
+
+
+METODA 2: COMMAND LINE / PHPMYADMIN (Manual)
+───────────────────────────────────────────────────────────────────────────
+
+1. Deschide phpMyAdmin în cPanel
+2. Selectează baza de date WordPress (webgsm_ro sau similar)
+3. Rulează următoarele comenzi:
+
+   -- BACKUP FIRST!
+   -- (cPanel → phpMyAdmin → Export)
+
+   -- 1. GĂSEȘTE PRODUSE ORFANE
+   SELECT p.ID, p.post_title 
+   FROM wp_posts p
+   WHERE p.post_type = 'product'
+     AND NOT EXISTS (
+         SELECT 1 FROM wp_wc_product_meta_lookup 
+         WHERE product_id = p.ID
+     );
+
+   -- 2. ȘTERGE PRODUSELE ORFANE
+   DELETE FROM wp_postmeta 
+   WHERE post_id IN (
+       SELECT ID FROM wp_posts 
+       WHERE post_type = 'product'
+         AND NOT EXISTS (
+             SELECT 1 FROM wp_wc_product_meta_lookup 
+             WHERE product_id = wp_posts.ID
+         )
+   );
+
+   DELETE FROM wp_term_relationships 
+   WHERE object_id IN (
+       SELECT ID FROM wp_posts 
+       WHERE post_type = 'product'
+         AND NOT EXISTS (
+             SELECT 1 FROM wp_wc_product_meta_lookup 
+             WHERE product_id = wp_posts.ID
+         )
+   );
+
+   UPDATE wp_posts 
+   SET post_status = 'trash'
+   WHERE post_type = 'product'
+     AND NOT EXISTS (
+         SELECT 1 FROM wp_wc_product_meta_lookup 
+         WHERE product_id = wp_posts.ID
+     );
+
+   -- 3. RESETEAZĂ AUTO_INCREMENT
+   SET @max_id = (SELECT MAX(ID) FROM wp_posts WHERE post_type = 'product');
+   ALTER TABLE wp_posts AUTO_INCREMENT = @max_id + 1;
+
+   -- 4. OPTIMIZEAZĂ TABELE
+   OPTIMIZE TABLE wp_posts;
+   OPTIMIZE TABLE wp_postmeta;
+   OPTIMIZE TABLE wp_wc_product_meta_lookup;
+
+
+📋 PAȘI RECOMANDAȚI:
+════════════════════════════════════════════════════════════════════════════
+
+1. ✓ Fă BACKUP la baza de date
+   - cPanel → phpMyAdmin → Selectează DB → Export (SQL)
+   - Salvează fișierul local
+
+2. ✓ Rulează una din metode (PHP Script sau MySQL Commands)
+
+3. ✓ Verifică rezultat
+   - Mergi în WooCommerce → Produse
+   - Verific că nu au rămas produse orfane
+
+4. ✓ Goleşte Trash-ul
+   - WooCommerce → Produse → Trash
+   - Selectează toate → Delete permanently
+
+5. ✓ Clear Cache
+   - WooCommerce → Status → Tools
+   - "Clear all transients" → Run tool
+
+6. ✓ Reîncarcă pagina de Produse
+   - WooCommerce → Produse (refresh)
+
+7. ✓ ÎNCEARCĂ DIN NOU importul
+   - START_PROGRAM.bat
+   - Importează EAN-ul 107082005005
+   - Ar trebui să funcționeze! ✓
+
+
+⚠️ ATENȚII IMPORTANTE:
+════════════════════════════════════════════════════════════════════════════
+
+1. ❌ NU șterge manual ID 5081 din wp_posts
+   - Folosește scriptul/comenzile de sus
+   - Trebuie șterse și din postmeta și term_relationships
+
+2. ❌ NU încerca alt EAN dacă nu ai curățat
+   - Vor apărea iarăși ID-uri orfane (5082, 5083, etc.)
+
+3. ⚠️ Dacă folosești phpMyAdmin, verifi că prefixul tabelei:
+   - Poate fi "wp_" SAU "wplt_" SAU altceva
+   - Vezi în cPanel care e prefixul tău
+
+4. 💾 BACKUP-URI regulate!
+   - După curățare, fă backup
+   - UpdraftPlus SAU BackupBuddy
+
+
+🎯 DUPA CURĂȚARE:
+════════════════════════════════════════════════════════════════════════════
+
+1. Testează conexiunea din Program:
+   - START_PROGRAM.bat
+   - Tab "Configurare" → "Test conexiune"
+   - Ar trebui "✓ Conexiune reușită"
+
+2. Importa un produs:
+   - Pune EAN în sku_list.txt: 107082005005
+   - Tab "Import Produse" → "Start Import"
+   - Log trebuie să arate:
+     ✓ Produs creat cu succes! ID: XXXX
+     ✓ PRODUS CREAT ȘI SALVAT COMPLET!
+
+3. Verifică în WooCommerce:
+   - Admin → Produse
+   - Caută produsul cu EAN 107082005005
+   - Verifi SKU: WEBGSM-005005-XXXX
+   - Verifi meta_data: _ean = 107082005005
+
+
+📊 DIAGNOSTIC:
+════════════════════════════════════════════════════════════════════════════
+
+Daca ai nelamuriri, rulează acest query în phpMyAdmin:
+
+-- Produse COMPLETE (OK)
+SELECT COUNT(*) 
+FROM wp_posts p
+WHERE p.post_type = 'product'
+  AND EXISTS (
+      SELECT 1 FROM wp_wc_product_meta_lookup 
+      WHERE product_id = p.ID
+  );
+
+-- Produse ORFANE (NU BINE)
+SELECT COUNT(*) 
+FROM wp_posts p
+WHERE p.post_type = 'product'
+  AND NOT EXISTS (
+      SELECT 1 FROM wp_wc_product_meta_lookup 
+      WHERE product_id = p.ID
+  );
+
+Ar trebui să vezi:
+- Produse COMPLETE: numărul de produse bune
+- Produse ORFANE: 0 (zero!)
+
+
+🆘 CONTACTEAZĂ DACĂ:
+════════════════════════════════════════════════════════════════════════════
+
+1. ✓ Ai dubii pe prefixul tabelei
+2. ✓ Script-ul PHP dă eroare
+3. ✓ După curățare inca apare eroare
+4. ✓ Ai incurcata baza de date cumva
+
+Trimite:
+- Ecran cu eroarea exactă
+- Fișierul din logs/ (copy-paste)
+- Prefixul tabelei (din phpMyAdmin)
+
+
+════════════════════════════════════════════════════════════════════════════
+Ultima actualizare: 14 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

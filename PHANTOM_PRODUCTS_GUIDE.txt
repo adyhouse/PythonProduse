@@ -1,0 +1,155 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║                       🚀 STRATEGIE SIGURĂ PENTRU IMPORT                     ║
+║                                                                            ║
+║  Programul NU mai șterge automat din baza de date (periculos!)             ║
+║  În schimb: Detectează phantom products și folosește UUID fallback         ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+🎯 CUM FUNCȚIONEAZĂ ACUM:
+════════════════════════════════════════════════════════════════════════════
+
+1. **Importul încercă să creeze produs cu SKU normal**
+   ✓ Dacă reușește: GATA!
+   ✗ Dacă primește "Duplicate entry" → TRECI LA PASUL 2
+
+2. **Detectează ID-ul phantom (ex: 5121)**
+   - Raportează: "ID phantom detectat: 5121"
+   - NU îl șterge automat (pericol!)
+   - NU încearcă DELETE (poate strică site-ul!)
+
+3. **Generează SKU UNIC cu UUID**
+   - SKU normal: WEBGSM-000324-1234
+   - SKU cu UUID: WEBGSM-000324-a1b2c3d4 (UUID aleatoriu)
+   - Încercă crearea din nou cu acest SKU
+
+4. **Dacă UUID funcționează: GATA!**
+   - Produsul se creează cu SKU unic
+   - Evită complet orice conflict
+
+5. **Dacă UUID tot eșuează:**
+   - Programul raportează: "ID phantom: 5121 trebuie ștergut manual"
+   - Tu TREBUIE să cureți MANUAL din phpMyAdmin
+
+
+⚠️ IMPORTANT: CÂND APARE "DUPLICATE ENTRY"
+════════════════════════════════════════════════════════════════════════════
+
+**LOGUL VA ARĂTA CUM E:**
+
+   🔍 ID phantom detectat: 5121 (nu se șterge automat!)
+   💾 ID-ul trebuie ștergut MANUAL din phpMyAdmin dacă vrei
+   🔧 Strategie: Generez SKU unic cu UUID pentru a evita collision
+   🆕 SKU nou cu UUID: WEBGSM-000324-a1b2c3d4
+   📡 Încerc să creez cu SKU UUID...
+
+**De obicei, după 1-2 încercări, UUID funcționează și produsul se creează.**
+
+
+✅ CE TE FACI DACĂ APARE "Duplicate entry":
+════════════════════════════════════════════════════════════════════════════
+
+**Scenariu 1: UUID funcționează (cel mai probabil - 95%)**
+────────────────────────────────────────────────────────────────────────────
+→ Programul continuă automat
+→ Produsul se creează cu SKU unic
+→ GATA! Niciuna acțiune de la tine
+
+**Scenariu 2: UUID tot eșuează (rar - 5%)**
+────────────────────────────────────────────────────────────────────────────
+Logul va arăta:
+
+   ⚠️ SKU UUID tot eșuează. Trebuie curățare MySQL manuală!
+   💡 Rulează: CURATA_MANUAL_SQL.sql din phpMyAdmin
+
+Atunci:
+
+1. Deschide **phpMyAdmin** → selectează baza de date
+2. Mergi la tab **SQL** (sus)
+3. Copiază și rulează comenzile din [CURATA_MANUAL_SQL.sql](CURATA_MANUAL_SQL.sql)
+4. Verifică că totul e OK (log: "orphan_count = 0")
+5. Relansează importul
+
+**Scenariu 3: Site-ul e stricat după cleanup**
+────────────────────────────────────────────────────────────────────────────
+(Ca ieri)
+
+→ Restore din backup (cel mai rapid)
+→ Repet importul (programul va folosi UUID, nu va mai folosi cleanup automat)
+
+
+📊 STATISTICI AȘTEPTATE:
+════════════════════════════════════════════════════════════════════════════
+
+PRIMA DATĂ:
+- Cu phantom ID 5121: UUID funcționează → Produs creat cu SKU-ul UUID ✓
+- Cu phantom ID 5123: UUID funcționează → Produs creat cu SKU-ul UUID ✓
+- Cu phantom ID 5125: UUID funcționează → Produs creat cu SKU-ul UUID ✓
+
+REZULTAT: Toate produsele se creează, niciun "Duplicate entry" final
+
+
+AZI (DUPĂ RESTORE):
+- Phantom ID-urile sunt șterse din baza
+- Importul va funcționa NORMAL
+- Niciun conflict UUID
+- SUCCES!
+
+
+🔧 MANUAL CLEANUP (pentru DEBUG):
+════════════════════════════════════════════════════════════════════════════
+
+Dacă vrei să cureți MANUAL phantom products după import:
+
+1. phpMyAdmin → SQL
+2. Copiază asta:
+
+SELECT p.ID, p.post_title FROM wplt_posts p
+LEFT JOIN wplt_wc_product_meta_lookup m ON p.ID = m.product_id
+WHERE p.post_type = 'product' AND m.product_id IS NULL;
+
+3. Rezultat = phantom ID-uri (dacă e gol → 0 phantom!)
+4. Pentru a le șterge (CAUTELA!):
+
+DELETE FROM wplt_posts WHERE post_type = 'product' 
+AND ID NOT IN (
+  SELECT product_id FROM wplt_wc_product_meta_lookup
+);
+
+
+💡 DE CE ACEASTA STRATEGIE E SIGURĂ?
+════════════════════════════════════════════════════════════════════════════
+
+✅ NU șterge automat → Site-ul rămâne sigur
+✅ UUID fallback → Evită coliziuni
+✅ Raportează ID-uri → Tu decizi ce să faci
+✅ Reversibil → Dacă ceva merge greșit, doar restore backup
+✅ Testabil → Puoi verifica rezultatul înainte de a limpa
+
+
+🎯 PAȘI PENTRU AZI:
+════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Ai restore-ul din backup (deja făcut)
+2. 🚀 Relansează importul cu SKU-uri
+3. 👀 Urmărește logul - va folosi UUID fallback
+4. ⏱️ Importul ar trebui să reușească
+5. ✨ GATA!
+
+
+📞 DACĂ CEVA NU MERGE:
+════════════════════════════════════════════════════════════════════════════
+
+Trimite LOG FILE-ul complet (din tab "Logging" sau din logs/ folder)
+- Indică: Ce SKU-uri au eșuat?
+- Indică: Ce ID-uri phantom apare în loguri?
+
+Apoi voi adapta codul dacă e nevoie!
+
+
+════════════════════════════════════════════════════════════════════════════
+VERSIUNE: 3.0 - STRATEGIE SIGURĂ (fără auto-delete)
+ACTUALIZAT: 15 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

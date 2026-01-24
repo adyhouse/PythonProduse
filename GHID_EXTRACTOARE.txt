@@ -1,0 +1,179 @@
+================================================================================
+                    GHID: EXTRACTOARE DE LINK-URI CATEGORII
+                          MOBILESENTRIX
+================================================================================
+
+Ai 3 scripturi diferite pentru a extrage link-urile de produse pe categorii:
+
+================================================================================
+1. EXTRACTOR_CATEGORY_LINKS.PY (Recomandat - cu paginație automată)
+================================================================================
+
+Extrage link-urile din categorii MobileSentrix cu suport paginație.
+
+PAȘI:
+  1. Rulează: python extractor_category_links.py
+     → Creează category_config.txt cu categorii de exemplu
+  
+  2. Editează category_config.txt:
+     - Adaugă/elimină categorii
+     - Format: category_name | category_url
+     - Lini care încep cu # sunt comentarii
+  
+  3. Rulează din nou: python extractor_category_links.py
+     → Extrage linkuri din fiecare categorie
+     → Creează:
+        * category_links.csv (format CSV)
+        * category_links.json (format JSON)
+
+EXEMPLU category_config.txt:
+  # Apple
+  Apple - iPhone | https://www.mobilesentrix.eu/accessories/apple-iphone/
+  Apple - iPad | https://www.mobilesentrix.eu/accessories/apple-ipad/
+  
+  # Samsung
+  Samsung - Galaxy S | https://www.mobilesentrix.eu/accessories/samsung-galaxy-s/
+
+OUTPUT:
+  category_links.csv     - CSV cu coloane: Categoria, Link Produs
+  category_links.json    - JSON structurat
+
+================================================================================
+2. EXTRACTOR_FROM_CSV.PY (Pentru liste existente)
+================================================================================
+
+Daca ai deja un CSV sau text file cu link-uri, acest script le clasifică
+automat pe categorii.
+
+PAȘI:
+  1. Pune link-urile într-un fișier CSV sau text:
+     
+     CSV format (cu header "Link" sau "URL"):
+       Produs,Link,Preț
+       Carcasă iPhone 13,https://www.mobilesentrix.eu/...,10
+       Folie iPad,https://www.mobilesentrix.eu/...,5
+     
+     Text format (un link pe linie):
+       https://www.mobilesentrix.eu/accessories/apple-iphone/case/
+       https://www.mobilesentrix.eu/accessories/samsung-galaxy-s/screen/
+  
+  2. Rulează:
+     python extractor_from_csv.py produse.csv
+     
+     SAU:
+     python extractor_from_csv.py sku_list.txt
+  
+  3. Script-ul:
+     - Citește link-urile
+     - Extrage categoria din URL (Apple, Samsung, etc.)
+     - Exportă în:
+        * products_by_category.csv
+        * products_by_category.json
+
+OUTPUT:
+  products_by_category.csv   - CSV organizat pe categorii
+  products_by_category.json  - JSON cu structură
+
+================================================================================
+3. EXTRACTOR_SELENIUM.PY (Pentru site-uri cu Cloudflare/JavaScript)
+================================================================================
+
+Folosește browser automat (Selenium) pentru a descărca pagini cu JavaScript.
+Util dacă site-ul nu se încarcă corect cu simple requests.
+
+INSTALARE DEPENDINȚE:
+  pip install selenium webdriver-manager beautifulsoup4
+
+PAȘI:
+  1. Editează scriptul și configurează URL-urile dorite în funcția main()
+  2. Rulează:
+     python extractor_selenium.py
+  
+  3. Se va deschide o fereastră Chrome și va extrage link-urile
+  
+AVANTAJE:
+  + Funcționează cu Cloudflare
+  + Execută JavaScript
+  + Suportă paginație
+
+DEZAVANTAJE:
+  - Mai lent
+  - Necesită Chrome instalat
+  - Mai Resource-intensive
+
+OUTPUT:
+  products_selenium.csv   - CSV cu link-urile extrase
+
+================================================================================
+                              FORMATUL CSV OUTPUT
+================================================================================
+
+Fiecare script creează CSV cu coloane:
+  - Categoria: Categoria din care vine linkul (ex: "Apple - iPhone")
+  - Link Produs: URL complet al produsului
+
+EXEMPLU:
+  Categoria,Link Produs
+  Apple - iPhone,https://www.mobilesentrix.eu/accessories/apple-iphone/case1/
+  Apple - iPhone,https://www.mobilesentrix.eu/accessories/apple-iphone/case2/
+  Apple - iPad,https://www.mobilesentrix.eu/accessories/apple-ipad/cover1/
+  Samsung - Galaxy S,https://www.mobilesentrix.eu/accessories/samsung-galaxy-s/screen/
+
+================================================================================
+                        INTEGRARE CU IMPORT_GUI.PY
+================================================================================
+
+După ce ai CSV-ul cu link-uri pe categorii:
+
+  1. Copiază link-urile din CSV în sku_list.txt
+  2. Rulează import_gui.py
+  3. Program-ul va descărca și procesa fiecare produs
+  4. CSV final va conține:
+     - Categoria (din linkul original)
+     - Imaginile uploadate pe WordPress
+     - Toți detaliile produsului
+
+================================================================================
+                          TROUBLESHOOTING
+================================================================================
+
+Problemă: "404 Not Found" pentru categorii
+Soluție:  
+  - Verifică URL-urile în browser
+  - Mobilesentrix s-ar fi mutat în structura URL
+  - Caută URL-urile manuale și actualizează config
+
+Problemă: Script nu extrage niciun link
+Soluție:
+  - Site-ul folosește JavaScript (încearcă extractor_selenium.py)
+  - URL-urile nu sunt în format așteptat
+  - Cloudflare blochează requests (încearcă cu delays mai mari)
+
+Problemă: Rate limiting (429 errors)
+Soluție:
+  - Scriptul include retry logic automat
+  - Adaugă sleep mai lung între requesturi
+  - Încearcă pe perioade diferite ale zilei
+
+================================================================================
+                            COMENZI RAPIDE
+================================================================================
+
+# Extrage din categorii (cu configurare):
+python extractor_category_links.py
+
+# Extrage din CSV existent:
+python extractor_from_csv.py produse.csv
+
+# Extrage cu Selenium (JavaScript):
+python extractor_selenium.py
+
+# Rulează import_gui cu linkurile:
+python import_gui.py
+  -> Adaugă link-urile din CSV în sku_list.txt
+  -> Click "Importa"
+
+================================================================================
+
+Versiune: 1.0
+Creat: Ianuarie 2026

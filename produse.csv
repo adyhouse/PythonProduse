@@ -1,0 +1,5 @@
+SKU,Nume_Produs,Pret_EUR,Categorie,URL_Imagine
+PROD-001,Telefon Samsung Galaxy S24,899,Telefoane,https://example.com/img1.jpg
+PROD-002,Husa Samsung S24,29,Accesorii,https://example.com/img2.jpg
+PROD-003,Incarcator Wireless,49,Accesorii,https://example.com/img3.jpg
+PROD-004,Casti Bluetooth,149,Audio,https://example.com/img4.jpg

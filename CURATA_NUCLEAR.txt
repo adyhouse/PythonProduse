@@ -1,0 +1,212 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║            🔴 CURĂȚARE NUCLEARĂ - Resetare AUTO_INCREMENT                   ║
+║                                                                            ║
+║  Problema: WooCommerce creează ID în wp_posts, dar eșuează în meta_lookup   ║
+║  ID-ul rămâne BLOCAT și AUTO_INCREMENT nu se resetează corect               ║
+║                                                                            ║
+║  SOLUȚIE: Șterge TOATE produsele parțial create și resetează AUTO_INCREMENT ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+⚠️ ATENȚIE CRITICĂ:
+════════════════════════════════════════════════════════════════════════════
+
+Aceste comenzi VOR ȘTERGE produse din baza de date!
+
+✅ Pasul 1: FAI BACKUP ÎNAINTE
+────────────────────────────────────────────────────────────────────────────
+
+1. Deschide cPanel
+2. phpMyAdmin
+3. Selectează baza de date
+4. Click "Export"
+5. Salvează fișierul SQL local (backup!)
+
+ABIA DUPĂ ce ai backup: continuă mai jos
+
+
+✅ Pasul 2: IDENTIFICĂ CE TREBUIE ȘTERS
+────────────────────────────────────────────────────────────────────────────
+
+Rulează ACEASTĂ comandă pentru a vedea ce produse e incomplete:
+
+-- VERIFICA: Produse FĂRĂ înregistrare în meta_lookup
+SELECT p.ID, p.post_title, p.post_status
+FROM wplt_posts p
+LEFT JOIN wplt_wc_product_meta_lookup m ON p.ID = m.product_id
+WHERE p.post_type = 'product'
+  AND m.product_id IS NULL
+ORDER BY p.ID DESC;
+
+-- Rezultat: Vei vedea lista ID-urilor orfane (5121, 5123, 5125, etc.)
+
+
+✅ Pasul 3: ȘTERGE TOATE REFERINȚELE
+────────────────────────────────────────────────────────────────────────────
+
+Copiază și rulează ACESTE 3 comenzi PE RÂND:
+
+-- 1. Șterge din postmeta
+DELETE FROM wplt_postmeta 
+WHERE post_id NOT IN (
+    SELECT ID FROM wplt_posts WHERE ID IS NOT NULL
+);
+
+-- 2. Șterge din term_relationships
+DELETE FROM wplt_term_relationships 
+WHERE object_id NOT IN (
+    SELECT ID FROM wplt_posts WHERE ID IS NOT NULL
+);
+
+-- 3. Șterge produsele incomplete din wp_posts
+DELETE FROM wplt_posts 
+WHERE post_type = 'product'
+  AND ID NOT IN (
+    SELECT product_id FROM wplt_wc_product_meta_lookup
+  );
+
+
+✅ Pasul 4: RESETEAZĂ AUTO_INCREMENT
+────────────────────────────────────────────────────────────────────────────
+
+⭐ ACEASTA E CHEIA!
+
+1. Găsește MAX(ID) pentru produse COMPLETE:
+   SELECT MAX(ID) as max_valid_id
+   FROM wplt_posts p
+   WHERE p.post_type = 'product'
+     AND EXISTS (
+         SELECT 1 FROM wplt_wc_product_meta_lookup 
+         WHERE product_id = p.ID
+     );
+
+   Rezultat: Ex: max_valid_id = 5 (dacă nu ai NICIUN produs valid)
+   Sau: max_valid_id = NULL (dacă table e goală)
+
+2. Daca e NULL (tabel gol), setează la 1:
+   ALTER TABLE wplt_posts AUTO_INCREMENT = 1;
+
+3. Daca e un număr (ex 5), setează la MAX+1:
+   ALTER TABLE wplt_posts AUTO_INCREMENT = 6;
+
+4. Verifică că s-a schimbat:
+   SELECT AUTO_INCREMENT FROM information_schema.TABLES 
+   WHERE TABLE_NAME = 'wplt_posts';
+
+
+✅ Pasul 5: CURAȚĂ SI ALTE TABELE
+────────────────────────────────────────────────────────────────────────────
+
+-- Șterge SKU-uri NULL din meta_lookup
+DELETE FROM wplt_wc_product_meta_lookup 
+WHERE sku IS NULL OR sku = '';
+
+-- Optimizează tabele
+OPTIMIZE TABLE wplt_posts;
+OPTIMIZE TABLE wplt_postmeta;
+OPTIMIZE TABLE wplt_wc_product_meta_lookup;
+
+
+✅ Pasul 6: VERIFICA FINAL
+────────────────────────────────────────────────────────────────────────────
+
+Rulează aceste comenzi pentru a confirma că e curat:
+
+-- Ar trebui 0 orfane:
+SELECT COUNT(*) as orphan_count FROM wplt_posts p
+WHERE p.post_type = 'product'
+  AND NOT EXISTS (
+    SELECT 1 FROM wplt_wc_product_meta_lookup 
+    WHERE product_id = p.ID
+  );
+
+-- Ar trebui 0 duplicate SKU:
+SELECT sku, COUNT(*) FROM wplt_wc_product_meta_lookup 
+WHERE sku IS NOT NULL AND sku != ''
+GROUP BY sku HAVING COUNT(*) > 1;
+
+-- Trebuie să se potrivească:
+SELECT COUNT(*) as products FROM wplt_posts WHERE post_type = 'product';
+SELECT COUNT(*) as meta_lookup FROM wplt_wc_product_meta_lookup;
+
+
+🎯 PAȘI FINALI:
+════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Fă BACKUP (export SQL)
+2. ✅ Rulează Pasul 2 (verifică ce e de șters)
+3. ✅ Rulează Pasul 3 (șterge orfanele)
+4. ✅ Rulează Pasul 4 (resetează AUTO_INCREMENT - IMPORTANT!)
+5. ✅ Rulează Pasul 5 (curață și optimizează)
+6. ✅ Rulează Pasul 6 (verifică final)
+7. ✅ Clear cache WooCommerce → Status → Tools → Clear transients
+8. ✅ Goleș Trash din WooCommerce (Produse → Trash → Delete permanently)
+9. ✅ Relansează importul!
+
+
+⚠️ IMPORTANT: Prefixul tabelei!
+════════════════════════════════════════════════════════════════════════════
+
+Prefixul tău e: wplt_ (nu wp_!)
+
+ÎNLOCUIEȘTE ÎN TOATE COMENZILE DE SUS:
+  wp_posts       → wplt_posts
+  wp_postmeta    → wplt_postmeta
+  wp_wc_product_meta_lookup → wplt_wc_product_meta_lookup
+  wp_term_relationships → wplt_term_relationships
+
+
+📌 DETALII PENTRU DEBUGGING:
+════════════════════════════════════════════════════════════════════════════
+
+Dacă tot nu funcționează după curățare:
+
+1. Verifică că AUTO_INCREMENT e setat corect:
+   SHOW CREATE TABLE wplt_posts\G
+
+   Ar trebui să arate: AUTO_INCREMENT=X (unde X e MAX_ID + 1)
+
+2. Verifică că nu sunt alte duplicate:
+   SELECT ID, post_title, post_status FROM wplt_posts 
+   WHERE post_type = 'product' ORDER BY ID DESC LIMIT 10;
+
+3. Verifica logul WordPress:
+   wp-content/debug.log (dacă e enabled)
+
+
+════════════════════════════════════════════════════════════════════════════
+COMANDĂ RAPID CU TOTUL (pentru copy-paste direct):
+
+START AQUI - COPY PASTE DIRECT ÎN phpMyAdmin:
+
+-- Backup is your responsibility!
+
+-- Șterge orfane din postmeta
+DELETE FROM wplt_postmeta WHERE post_id NOT IN (SELECT ID FROM wplt_posts WHERE ID IS NOT NULL);
+
+-- Șterge orfane din term_relationships
+DELETE FROM wplt_term_relationships WHERE object_id NOT IN (SELECT ID FROM wplt_posts WHERE ID IS NOT NULL);
+
+-- Șterge produse incomplete
+DELETE FROM wplt_posts WHERE post_type = 'product' AND ID NOT IN (SELECT product_id FROM wplt_wc_product_meta_lookup);
+
+-- Resetează AUTO_INCREMENT (dacă no valid products, seazà 1, otherwise MAX+1)
+ALTER TABLE wplt_posts AUTO_INCREMENT = 1;
+
+-- Curață NULL SKU
+DELETE FROM wplt_wc_product_meta_lookup WHERE sku IS NULL OR sku = '';
+
+-- Optimizează
+OPTIMIZE TABLE wplt_posts;
+OPTIMIZE TABLE wplt_postmeta;
+OPTIMIZE TABLE wplt_wc_product_meta_lookup;
+
+-- Verifi
+SELECT COUNT(*) FROM wplt_posts WHERE post_type = 'product';
+SELECT COUNT(*) FROM wplt_wc_product_meta_lookup;
+
+════════════════════════════════════════════════════════════════════════════
+Ultima actualizare: 15 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

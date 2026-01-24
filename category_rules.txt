@@ -1,0 +1,201 @@
+# Auto-generated category rules from MobileSentrix
+# Format: keyword|Categoria WebGSM (hierarhie cu '>')
+# IMPORTANT: Ordinea conteaza! Prima potrivire castiga.
+
+# ========== APPLE PIESE: iPHONE ==========
+# IMPORTANT: Modele cu Pro Max trebuie inainte de Pro si numerele singure!
+iphone 17 pro max|Piese de schimb > Apple > iPhone > iPhone 17 Pro Max
+iphone 17 pro|Piese de schimb > Apple > iPhone > iPhone 17 Pro
+iphone 17|Piese de schimb > Apple > iPhone > iPhone 17
+iphone air|Piese de schimb > Apple > iPhone > iPhone Air
+iphone 16 pro max|Piese de schimb > Apple > iPhone > iPhone 16 Pro Max
+iphone 16 pro|Piese de schimb > Apple > iPhone > iPhone 16 Pro
+iphone 16|Piese de schimb > Apple > iPhone > iPhone 16
+iphone 15 pro max|Piese de schimb > Apple > iPhone > iPhone 15 Pro Max
+iphone 15 pro|Piese de schimb > Apple > iPhone > iPhone 15 Pro
+iphone 15|Piese de schimb > Apple > iPhone > iPhone 15
+iphone 14 pro max|Piese de schimb > Apple > iPhone > iPhone 14 Pro Max
+iphone 14 pro|Piese de schimb > Apple > iPhone > iPhone 14 Pro
+iphone 14|Piese de schimb > Apple > iPhone > iPhone 14
+iphone 13 pro max|Piese de schimb > Apple > iPhone > iPhone 13 Pro Max
+iphone 13 pro|Piese de schimb > Apple > iPhone > iPhone 13 Pro
+iphone 13|Piese de schimb > Apple > iPhone > iPhone 13
+iphone 12 pro max|Piese de schimb > Apple > iPhone > iPhone 12 Pro Max
+iphone 12 pro|Piese de schimb > Apple > iPhone > iPhone 12 Pro
+iphone 12|Piese de schimb > Apple > iPhone > iPhone 12
+iphone 11 pro max|Piese de schimb > Apple > iPhone > iPhone 11 Pro Max
+iphone 11 pro|Piese de schimb > Apple > iPhone > iPhone 11 Pro
+iphone 11|Piese de schimb > Apple > iPhone > iPhone 11
+iphone se|Piese de schimb > Apple > iPhone > iPhone SE
+iphone xr|Piese de schimb > Apple > iPhone > iPhone XR
+iphone xs|Piese de schimb > Apple > iPhone > iPhone XS
+iphone x|Piese de schimb > Apple > iPhone > iPhone X
+iphone 8|Piese de schimb > Apple > iPhone > iPhone 8
+iphone 7|Piese de schimb > Apple > iPhone > iPhone 7
+iphone 6|Piese de schimb > Apple > iPhone > iPhone 6
+
+# ========== APPLE PIESE: iPad ==========
+ipad pro|Piese de schimb > Apple > iPad > iPad Pro
+ipad air|Piese de schimb > Apple > iPad > iPad Air
+ipad mini|Piese de schimb > Apple > iPad > iPad Mini
+ipad|Piese de schimb > Apple > iPad > iPad
+
+# ========== APPLE PIESE: Watch ==========
+apple watch|Piese de schimb > Apple > Watch
+watch series|Piese de schimb > Apple > Watch
+
+# ========== APPLE PIESE: iPod ==========
+ipod|Piese de schimb > Apple > iPod
+
+# ========== APPLE PIESE: AirPods ==========
+airpods|Piese de schimb > Apple > AirPods
+
+# ========== APPLE PIESE: iMac ==========
+imac|Piese de schimb > Apple > iMac
+
+# ========== APPLE PIESE: Mac Mini ==========
+mac mini|Piese de schimb > Apple > Mac Mini
+
+# ========== APPLE PIESE: Mac Pro ==========
+mac pro|Piese de schimb > Apple > Mac Pro
+
+# ========== APPLE PIESE: MacBook (fallback) ==========
+macbook pro|Piese de schimb > Apple > MacBook Pro
+macbook air|Piese de schimb > Apple > MacBook Air
+macbook|Piese de schimb > Apple > MacBook
+
+# ========== SAMSUNG PIESE: S Series ==========
+galaxy s24|Piese de schimb > Samsung > Galaxy S > S24
+galaxy s23|Piese de schimb > Samsung > Galaxy S > S23
+galaxy s22|Piese de schimb > Samsung > Galaxy S > S22
+galaxy s21|Piese de schimb > Samsung > Galaxy S > S21
+galaxy s20|Piese de schimb > Samsung > Galaxy S > S20
+galaxy s10|Piese de schimb > Samsung > Galaxy S > S10
+galaxy s9|Piese de schimb > Samsung > Galaxy S > S9
+galaxy s8|Piese de schimb > Samsung > Galaxy S > S8
+
+# ========== SAMSUNG PIESE: Note Series ==========
+galaxy note 20|Piese de schimb > Samsung > Galaxy Note > Note 20
+galaxy note 10|Piese de schimb > Samsung > Galaxy Note > Note 10
+galaxy note 9|Piese de schimb > Samsung > Galaxy Note > Note 9
+galaxy note 8|Piese de schimb > Samsung > Galaxy Note > Note 8
+
+# ========== SAMSUNG PIESE: A Series ==========
+galaxy a54|Piese de schimb > Samsung > Galaxy A > A54
+galaxy a53|Piese de schimb > Samsung > Galaxy A > A53
+galaxy a52|Piese de schimb > Samsung > Galaxy A > A52
+galaxy a51|Piese de schimb > Samsung > Galaxy A > A51
+galaxy a50|Piese de schimb > Samsung > Galaxy A > A50
+galaxy a|Piese de schimb > Samsung > Galaxy A
+
+# ========== SAMSUNG PIESE: Z Series (Fold/Flip) ==========
+galaxy z fold|Piese de schimb > Samsung > Galaxy Z > Z Fold
+galaxy z flip|Piese de schimb > Samsung > Galaxy Z > Z Flip
+galaxy z|Piese de schimb > Samsung > Galaxy Z
+
+# ========== SAMSUNG PIESE: J Series ==========
+galaxy j|Piese de schimb > Samsung > J series
+
+# ========== SAMSUNG PIESE: Tab Series ==========
+galaxy tab|Piese de schimb > Samsung > Tab series
+
+# ========== MOTOROLA PIESE ==========
+moto g|Piese de schimb > Motorola
+moto edge|Piese de schimb > Motorola
+moto e|Piese de schimb > Motorola
+moto razr|Piese de schimb > Motorola
+motorola|Piese de schimb > Motorola
+
+# ========== GOOGLE PIXEL PIESE ==========
+pixel 9|Piese de schimb > Google
+pixel 8|Piese de schimb > Google
+pixel 7|Piese de schimb > Google
+pixel 6|Piese de schimb > Google
+pixel 5|Piese de schimb > Google
+pixel 4|Piese de schimb > Google
+pixel tablet|Piese de schimb > Google
+pixel|Piese de schimb > Google
+
+# ========== ALTE DISPOZITIVE PIESE ==========
+oneplus|Piese de schimb > Alte piese
+oppo|Piese de schimb > Alte piese
+realme|Piese de schimb > Alte piese
+vivo|Piese de schimb > Alte piese
+xiaomi|Piese de schimb > Alte piese
+huawei|Piese de schimb > Alte piese
+nokia|Piese de schimb > Alte piese
+sony|Piese de schimb > Alte piese
+asus|Piese de schimb > Alte piese
+lenovo|Piese de schimb > Alte piese
+
+# ========== ACCESORII - HUSE & CARCASE ==========
+case|Accesorii > Huse
+cover|Accesorii > Huse
+silicone case|Accesorii > Huse
+leather case|Accesorii > Huse
+flip cover|Accesorii > Huse
+book case|Accesorii > Huse
+pouch|Accesorii > Huse
+
+# ========== ACCESORII - BATERII EXTERNE ==========
+power bank|Accesorii > Baterii externe
+external battery|Accesorii > Baterii externe
+
+# ========== ACCESORII - INCARCATOARE ==========
+charger|Accesorii > Incarcatoare
+wall adapter|Accesorii > Incarcatoare
+power adapter|Accesorii > Incarcatoare
+charging dock|Accesorii > Incarcatoare
+
+# ========== ACCESORII - SUPORT TELEFON ==========
+stand|Accesorii > Suport telefon
+holder|Accesorii > Suport telefon
+mount|Accesorii > Suport telefon
+
+# ========== ACCESORII - FOLII PROTECTIE ==========
+tempered glass|Accesorii > Folii protectie
+screen protector|Accesorii > Folii protectie
+glass protector|Accesorii > Folii protectie
+
+# ========== ACCESORII - CABLURI & ADAPTORI ==========
+cable|Accesorii > Cabluri si Adaptori
+usb-c|Accesorii > Cabluri si Adaptori
+lightning|Accesorii > Cabluri si Adaptori
+thunderbolt|Accesorii > Cabluri si Adaptori
+micro-usb|Accesorii > Cabluri si Adaptori
+adapter|Accesorii > Cabluri si Adaptori
+
+# ========== ACCESORII - CARDURI & MEMORII ==========
+memory card|Accesorii > Carduri si Memorii USB
+sd card|Accesorii > Carduri si Memorii USB
+micro sd|Accesorii > Carduri si Memorii USB
+sim tray|Accesorii > Carduri si Memorii USB
+usb drive|Accesorii > Carduri si Memorii USB
+
+# ========== ACCESORII - CASTI AUDIO ==========
+headphones|Accesorii > Casti Audio
+earbuds|Accesorii > Casti Audio
+airpods|Accesorii > Casti Audio
+speaker|Accesorii > Casti Audio
+audio|Accesorii > Casti Audio
+
+# ========== CONSOLE JOCURI ==========
+ps5|Console jocuri
+ps4|Console jocuri
+playstation|Console jocuri
+xbox|Console jocuri
+nintendo|Console jocuri
+switch|Console jocuri
+
+# ========== UNELTE SI CONSUMABILE ==========
+tool|Unelte si consumabile
+cleaning|Unelte si consumabile
+alcohol|Unelte si consumabile
+adhesive|Unelte si consumabile
+workspace|Unelte si consumabile
+
+# ========== GENERIC FALLBACK (daca nu se potriveste nimic) ==========
+display|Piese de schimb > Alte piese
+battery|Piese de schimb > Alte piese
+screen|Piese de schimb > Alte piese
+glass|Piese de schimb > Alte piese

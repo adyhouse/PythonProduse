@@ -1,0 +1,246 @@
+================================================================================
+                            INDEX SCRIPTURI
+                        EXTRACTOARE MOBILESENTRIX
+================================================================================
+
+NUME FIȘIER                      DESCRIERE                   STATUS
+─────────────────────────────────────────────────────────────────────────────
+
+🌟 PRINCIPAL
+─────────────────────────────────────────────────────────────────────────────
+master_extractor.py              Meniu principal interactiv  ✓ CREAT
+                                 START HERE!
+
+
+📊 SCRIPTURI DE EXTRACȚIE
+─────────────────────────────────────────────────────────────────────────────
+category_url_generator.py        Generează și testează       ✓ CREAT
+                                 URL-urile categoriilor
+
+extractor_category_links.py      Extrage link-uri din       ✓ CREAT
+                                 categorii cu paginație
+
+extractor_from_csv.py            Organizează link-urile      ✓ CREAT
+                                 existente din CSV/text
+
+extractor_selenium.py            Extrage cu browser          ✓ CREAT
+                                 (pentru site-uri cu JS)
+
+
+📚 DOCUMENTAȚIE
+─────────────────────────────────────────────────────────────────────────────
+START_HERE_EXTRACTOARE.txt       Ghid rapid START            ✓ CREAT
+                                 (3 pași simpli)
+
+README_EXTRACTOARE.txt           README complet cu           ✓ CREAT
+                                 exemple și workflow
+
+GHID_EXTRACTOARE.txt             Ghid detaliat de            ✓ CREAT
+                                 referință
+
+EXTRACTOARE_SUMMARY.txt          Sumar și status             ✓ CREAT
+
+
+🔧 CONFIGURAȚIE (GENERATĂ)
+─────────────────────────────────────────────────────────────────────────────
+category_config.txt              URL-uri categoriilor        (generat automat)
+
+category_links.csv               Link-urile pe categorii     (generat após ext.)
+
+products_by_category.csv         Linkuri organizate          (generat după csv)
+
+sku_list.txt                     Input pentru import_gui     (update după export)
+
+export_produse.csv               Output final (import_gui)   (generat după import)
+
+
+📋 FIȘIERE EXISTENTE (INTEGRABIE)
+─────────────────────────────────────────────────────────────────────────────
+import_gui.py                    Programul principal de      ✓ EXISTENT
+                                 import (descarcă produse)
+
+.env                             Configurație WordPress      ✓ EXISTENT
+                                 (credențiale)
+
+
+================================================================================
+                            MODUL DE UTILIZARE
+================================================================================
+
+FLOW COMPLET (recomanda]):
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. python master_extractor.py
+     ├─ Opțiunea 1: Generează URL-urile
+     │  ➜ category_config.txt
+     │
+     ├─ Opțiunea 2: Extrage link-urile
+     │  ➜ category_links.csv
+     │
+     └─ Opțiunea 5: Export pentru import
+        ➜ sku_list.txt (update)
+
+  2. python import_gui.py
+     ├─ Click "Importa"
+     └─ ➜ export_produse.csv (FINAL!)
+
+
+FLOW ALTERNATIV (CSV existent):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. python extractor_from_csv.py produse.csv
+     ➜ products_by_category.csv
+
+  2. Copiază link-urile în sku_list.txt
+
+  3. python import_gui.py
+     ➜ export_produse.csv
+
+
+FLOW ADVANCED (Site-uri cu Cloudflare):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. python extractor_selenium.py
+     ➜ products_selenium.csv
+
+  2. Copiază în sku_list.txt
+
+  3. python import_gui.py
+     ➜ export_produse.csv
+
+
+================================================================================
+                            COMENZI RAPIDE
+================================================================================
+
+Lansare meniu principal:
+  $ python master_extractor.py
+
+Generează URL-urile:
+  $ python category_url_generator.py
+
+Extrage din categorii:
+  $ python extractor_category_links.py
+
+Organizează din CSV:
+  $ python extractor_from_csv.py produse.csv
+
+Extrage cu Selenium:
+  $ python extractor_selenium.py
+
+Rulează import final:
+  $ python import_gui.py
+
+Citire ghiduri:
+  $ cat START_HERE_EXTRACTOARE.txt
+  $ cat README_EXTRACTOARE.txt
+  $ cat GHID_EXTRACTOARE.txt
+
+
+================================================================================
+                            DIMENSIUNI FIȘIERE
+================================================================================
+
+Script-uri:
+  master_extractor.py         ~10 KB  (meniu principal)
+  extractor_category_links.py ~14 KB  (extractor cu paginație)
+  extractor_from_csv.py       ~8 KB   (organizator)
+  category_url_generator.py   ~6 KB   (generator URL)
+  extractor_selenium.py       ~6 KB   (browser automat)
+
+Documentație:
+  START_HERE_EXTRACTOARE.txt  ~12 KB  (ghid rapid)
+  README_EXTRACTOARE.txt      ~10 KB  (README)
+  GHID_EXTRACTOARE.txt        ~6 KB   (referință)
+
+Configurații (generate):
+  category_config.txt         ~2 KB   (URL-urile)
+  category_links.csv          variabil (depinde de extracție)
+
+
+================================================================================
+                            DEPENDINȚE
+================================================================================
+
+Python: 3.7+ (testat pe 3.11.7)
+
+Necesare (deja instalate):
+  ✓ requests
+  ✓ beautifulsoup4
+  ✓ Pillow (PIL)
+
+Opționale (doar pentru Selenium):
+  selenium
+  webdriver-manager
+
+Instalare opționale:
+  pip install selenium webdriver-manager
+
+
+================================================================================
+                            INTEGRARE
+================================================================================
+
+Cu import_gui.py:
+  - category_links.csv ➜ sku_list.txt ➜ import_gui.py
+  - Categoria detectată automat
+  - Imagini uploadate pe WordPress
+  - CSV final cu categorii
+
+Cu WooCommerce:
+  - export_produse.csv ➜ WooCommerce Import
+  - Format standard CSV
+  - Coloane: EAN, SKU, Nume, Preț, Descriere, Stock, etc.
+
+
+================================================================================
+                            VERSIUNI & MODIFICĂRI
+================================================================================
+
+v1.0 (Ianuarie 19, 2026)
+  ✓ Creat master_extractor.py (meniu principal)
+  ✓ Creat category_url_generator.py
+  ✓ Creat extractor_category_links.py
+  ✓ Creat extractor_from_csv.py
+  ✓ Creat extractor_selenium.py
+  ✓ Documentație completă
+  ✓ Testat și validat
+  ✓ Integrat cu import_gui.py
+
+
+================================================================================
+                            STATUS FINAL
+================================================================================
+
+  ✅ 5 scripturi Python create
+  ✅ 3 documente cu ghiduri
+  ✅ Testat și validat
+  ✅ Gata pentru utilizare
+  ✅ Integrat cu import_gui.py
+  ✅ Support Cloudflare (Selenium)
+  ✅ Paginație automată
+  ✅ Retry logic
+
+  SISTEM: COMPLET ✓
+
+
+================================================================================
+                            NEXT STEPS
+================================================================================
+
+  1. Citește: START_HERE_EXTRACTOARE.txt
+  2. Rulează: python master_extractor.py
+  3. Urmează meniu-ul interactiv
+  4. Export link-urile către import_gui.py
+  5. Descarcă și procesează produsele
+
+  TOTAL: 45-90 minute pentru proces complet
+
+
+================================================================================
+
+Creat: Ianuarie 19, 2026
+Versiune: 1.0
+Status: ✓ PRODUS ȘI GATA PENTRU UTILIZARE
+
+================================================================================

@@ -1,0 +1,104 @@
+════════════════════════════════════════════════════════════════════════════
+         VERSIUNE 3.3 - ERROR HANDLING IMPROVEMENTS
+════════════════════════════════════════════════════════════════════════════
+
+DATA: 15.01.2026
+VERSIUNE: 3.3 (din 3.2)
+FIȘIER: import_gui.py
+
+UPDATES IMPLEMENTATE:
+────────────────────
+
+✅ 1. BETTER 400 ERROR HANDLING (Lines 809-882)
+
+   ANTES:
+   - Doar verifică "Duplicate entry" în text
+   - Dacă nu găsea, ignora eroarea
+   
+   ACUM:
+   - Afișează mesajul complet de eroare
+   - Diferențiază între 3 tipuri de erori 400:
+     a) Duplicate entry (phantom) → Auto-delete
+     b) Validare date → UUID retry
+     c) Altă eroare → UUID retry
+
+✅ 2. MULTI-STAGE PHANTOM CLEANUP (Lines 835-855)
+
+   ANTES:
+   - Încearca DELETE via API
+   - Dacă eșuează, doar log warning
+   
+   ACUM:
+   - Nivel 1: DELETE via REST API
+   - Nivel 2: Dacă 404, afișează SQL cu instrucțiuni phpMyAdmin
+   - Nivel 3: UUID fallback pentru retry
+   
+   EXEMPLU LOG:
+   ───────────
+   🗑️ Încerc ștergere AUTOMATĂ phantom ID 5141 via API...
+   ⚠️ API Delete eșuat (status 404) - phantom e incomplet
+   🔧 Încerc ștergere directă din baza de date (MySQL)...
+   💡 Pentru ștergere manuală din phpMyAdmin:
+      DELETE FROM wplt_posts WHERE ID=5141;
+      DELETE FROM wplt_postmeta WHERE post_id=5141;
+      DELETE FROM wplt_wc_product_meta_lookup WHERE product_id=5141;
+
+✅ 3. ENHANCED ERROR LOGGING (Lines 809-820)
+
+   ANTES:
+   - Log: "Status 400"
+   
+   ACUM:
+   - Log: "Status 400 - Invalid SKU" (mesajul real din API)
+   - Decode HTML entities corect
+   - Parse JSON error message dacă disponibil
+
+✅ 4. ROBUSTNESS IMPROVEMENTS
+
+   - Handling pentru 3 tipuri de HTTP 400 errors
+   - Proper if/elif/else structure (nu mai override match variable)
+   - Better variable initialization (delete_success flag)
+   - Correct indentation la toți retry paths
+
+DEBUGGING BENEFITS:
+──────────────────
+
+1. Vei vedea EXACT ce mesaj trimite WooCommerce
+2. Vei putea identifica problema reală (nu doar "400")
+3. Phantom IDs vor fi listate cu instrucțiunile SQL
+4. Auto-cleanup va fi mai transparent în log
+
+TESTARE:
+────────
+
+Pentru a testa noile improvements:
+
+1. Deschide sku_list.txt
+2. Adaugă 1 EAN de test
+3. Rulează START_PROGRAM.bat
+4. Observă LOG:
+   - Trebuie să vadă mesajul de eroare COMPLET
+   - Dacă e phantom, trebuie să vadă instrucțiunile SQL
+   - Fiecare retry trebuie să aibă alt SKU
+
+FIȘIERE ADĂUGATE:
+─────────────────
+
+- DIAGNOZA_EROARE_400.txt (analiza detaliată a problemei)
+- MANUAL_CLEANUP_PHANTOM_5141-5145.txt (instrucțiuni phpMyAdmin)
+- VERSIUNE_3_3_CHANGELOG.txt (acest fișier)
+
+NEXT STEPS - CE TREBUIE INVESTIGAT:
+───────────────────────────────────
+
+⚠️  STATUS 400 CONSTANT - NU E NORMAL!
+
+Trebuie aflat:
+1. Care e mesajul de eroare EXACT (acum il vei vedea în log)
+2. Sunt datele produs valide? (verifică wc_data structure)
+3. WooCommerce/Plugin status? (verifică admin)
+4. Database integrity? (rulează SELECT queries din DIAGNOZA)
+
+ACUM PUTEM DIAGNOSTICA MULT MAI BINE! 🎯
+
+════════════════════════════════════════════════════════════════════════════

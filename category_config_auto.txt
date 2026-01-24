@@ -1,0 +1,3 @@
+# Auto-generated category URLs
+# Format: category_name | category_url
+

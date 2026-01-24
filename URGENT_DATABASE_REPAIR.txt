@@ -1,0 +1,113 @@
+════════════════════════════════════════════════════════════════════════════
+          URGENT: DATABASE CORRUPTION - wplt_wc_product_meta_lookup
+════════════════════════════════════════════════════════════════════════════
+
+PROBLEMA DESCOPERITĂ (15.01.2026 15:11):
+──────────────────────────────────────
+
+Error: [Duplicate entry '5146' for key 'PRIMARY']
+       INSERT INTO wplt_wc_product_meta_lookup (product_id, sku)
+
+CAUZA REALĂ:
+─────────────
+
+Tabelul wplt_wc_product_meta_lookup conține ORPHANED ENTRIES (înregistrări orfane)
+de la tentativele de import anterioare.
+
+FLU DE EROARE:
+1. POST /products → Succes, creează product ID 5146 în wp_posts ✓
+2. WooCommerce încearcă INSERT în wplt_wc_product_meta_lookup
+3. DAR: Tabelul are deja o înregistrare "fantomă" cu product_id=5146
+4. Rezultat: PRIMARY KEY CONFLICT → Status 400 ✗
+
+SOLUȚIA - REPAIR DATABASE:
+──────────────────────────
+
+PASUL 1: Deschide phpMyAdmin
+PASUL 2: Mergi la SQL tab
+PASUL 3: Rulează ACESTE comenzi ÎN ORDINE:
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 1: Identifică orphaned entries în meta_lookup
+SELECT product_id, COUNT(*) as cnt 
+FROM wplt_wc_product_meta_lookup 
+GROUP BY product_id 
+HAVING COUNT(*) > 1;
+
+-- Rezultatul va arăta care product_ids au duplicate entries
+-- Exemple: 5141, 5142, 5143, etc.
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 2: Verifică care product_ids orfane NU există în wp_posts
+SELECT DISTINCT pl.product_id 
+FROM wplt_wc_product_meta_lookup pl
+LEFT JOIN wplt_posts p ON pl.product_id = p.ID
+WHERE p.ID IS NULL AND pl.product_id > 5000;
+
+-- Acestea sunt ORPHANED (în meta_lookup dar NU în wp_posts)
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 3: CURAȚĂ - Șterge ORPHANED entries din meta_lookup
+-- IMPORTANT: Rulează PASUL 2 PRIMEIRO pentru a vedea ce va fi șters!
+
+DELETE FROM wplt_wc_product_meta_lookup 
+WHERE product_id NOT IN (
+    SELECT ID FROM wplt_posts WHERE post_type = 'product'
+);
+
+-- Rezultat: "X rows affected" - asta e bine!
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 4: CURAȚĂ - Șterge phantom products din wp_posts
+-- (care nu au nicio meta_data în meta_lookup)
+
+DELETE FROM wp_posts 
+WHERE post_type = 'product' 
+AND ID NOT IN (
+    SELECT DISTINCT product_id FROM wplt_wc_product_meta_lookup
+);
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 5: REPAIR - Optimizează și repară tabelul
+REPAIR TABLE wplt_wc_product_meta_lookup;
+OPTIMIZE TABLE wplt_wc_product_meta_lookup;
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 6: Resetează AUTO_INCREMENT
+ALTER TABLE wplt_posts AUTO_INCREMENT = (SELECT MAX(ID) + 1 FROM wplt_posts);
+
+═══════════════════════════════════════════════════════════════════════════
+
+-- PASUL 7: VERIFICARE - Confirmă cleanup
+SELECT COUNT(*) as 'Orfane în meta_lookup' 
+FROM wplt_wc_product_meta_lookup 
+WHERE product_id NOT IN (
+    SELECT ID FROM wplt_posts WHERE post_type = 'product'
+);
+
+-- Rezultatul TREBUIE să fie: 0
+
+═══════════════════════════════════════════════════════════════════════════
+
+DUPĂ CLEANUP:
+─────────────
+
+1. ✅ Relansează programul: START_PROGRAM.bat
+2. ✅ Încearcă importul din nou
+3. ✅ Ar trebui să meargă acum!
+
+DACĂ ÎNCĂ NU MERGE:
+───────────────────
+
+Atunci problema e mai profundă. Contactează hosting-ul și cere:
+- Repair table wplt_wc_product_meta_lookup
+- Check database integrity
+- Posibil corrupted indexes
+
+════════════════════════════════════════════════════════════════════════════

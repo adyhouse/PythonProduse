@@ -1,0 +1,304 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║            📦 GHID COMPLET - IMPORT PRODUSE MOBILESENTRIX                  ║
+║                         Versiune 2.0 cu GUI                                ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+🎯 DESCRIERE
+────────────────────────────────────────────────────────────────────────────
+
+Program pentru import AUTOMAT de produse de pe MobileSentrix.eu în WooCommerce
+cu TOATE funcțiile:
+
+✅ Interfață grafică simplă (GUI) - Ușor de folosit!
+✅ Descarcă TOATE imaginile produsului (3-5 poze per produs) la rezoluție mare
+✅ Web scraping automat de pe mobilesentrix.eu
+✅ Optimizare imagini (resize, compresie)
+✅ Convertește prețuri EUR → RON automat
+✅ Extrage descrieri în română
+✅ Upload automat în WooCommerce
+✅ Se poate compila în EXE standalone (fără Python)
+
+
+📋 PAȘI DE INSTALARE ȘI UTILIZARE
+════════════════════════════════════════════════════════════════════════════
+
+
+VARIANTĂ A - Cu Python (pentru utilizare repetată)
+────────────────────────────────────────────────────────────────────────────
+
+PASUL 1: Instalează Python
+   📁 Dublu-click pe: INSTALARE_PYTHON.bat
+   
+   ⏱ Durată: 3-5 minute
+   ℹ️ Se descarcă și instalează Python 3.11 automat
+   ⚠️ IMPORTANT: După instalare ÎNCHIDE terminalul și deschide unul NOU
+
+PASUL 2: Instalează Dependințele
+   📁 Dublu-click pe: INSTALEAZA_DEPENDINTE.bat
+   
+   ⏱ Durată: 2-3 minute
+   ℹ️ Instalează toate pachetele necesare:
+      • requests (pentru API și download)
+      • beautifulsoup4 (pentru web scraping)
+      • woocommerce (pentru API WooCommerce)
+      • Pillow (pentru procesare imagini)
+      • PyInstaller (pentru creare EXE)
+
+PASUL 3: Pornește Programul
+   📁 Dublu-click pe: START_PROGRAM.bat
+   
+   ✨ Se deschide interfața grafică!
+
+
+VARIANTĂ B - EXE Standalone (fără Python)
+────────────────────────────────────────────────────────────────────────────
+
+PASUL 1-2: Urmează Varianta A (instalează Python + dependințe)
+
+PASUL 3: Compilează în EXE
+   📁 Dublu-click pe: COMPILEAZA_EXE.bat
+   
+   ⏱ Durată: 2-3 minute
+   ℹ️ Creează un fișier EXE standalone în folder dist\
+   📦 Fișierul: dist\ImportProduse.exe
+   
+   ✅ Acest EXE poate fi copiat pe ORICE calculator Windows
+   ✅ NU mai trebuie instalat Python
+   ✅ Funcționează de sine stătător!
+
+PASUL 4: Folosește EXE-ul
+   📁 Dublu-click pe: dist\ImportProduse.exe
+   
+   SAU
+   
+   📁 Dublu-click pe: START_PROGRAM.bat (detectează automat EXE-ul)
+
+
+🖥 UTILIZARE INTERFAȚĂ GRAFICĂ
+════════════════════════════════════════════════════════════════════════════
+
+
+TAB 1: 📦 IMPORT PRODUSE
+────────────────────────────────────────────────────────────────────────────
+
+1. Selectează fișierul cu SKU-uri
+   • Click pe "Răsfoire..." și alege sku_list.txt
+   • SAU tastează calea manuală
+
+2. Bifează opțiunile dorite:
+   ☑ Descarcă toate imaginile produsului (3-5 poze/produs)
+   ☑ Optimizează imaginile (resize la dimensiuni optime)
+   ☑ Convertește prețul EUR → RON
+   ☑ Extrage descriere în română
+
+3. Click pe butonul: 🚀 START IMPORT
+
+4. Urmărește progresul:
+   • Bara de progres se mișcă
+   • Mesaje în timp real despre fiecare produs
+   • Poți opri oricând cu butonul ⛔ STOP
+
+
+TAB 2: ⚙ CONFIGURARE
+────────────────────────────────────────────────────────────────────────────
+
+1. Completează datele WooCommerce:
+   
+   URL WooCommerce: https://webgsm.ro
+   
+   Consumer Key: ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   (Obține de la: WooCommerce → Setări → Avansat → REST API)
+   
+   Consumer Secret: cs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   
+   Curs EUR → RON: 4.97
+   (Va fi folosit pentru conversie automată)
+
+2. Click pe: 💾 Salvează Configurare
+
+3. Click pe: 🔍 Test Conexiune
+   • Verifică dacă datele sunt corecte
+   • Trebuie să apară mesaj "Conexiune reușită!"
+
+
+TAB 3: 📋 LOG
+────────────────────────────────────────────────────────────────────────────
+
+• Vezi toate operațiunile în timp real
+• Fiecare mesaj are timestamp
+• Culori: SUCCESS (verde), ERROR (roșu), INFO (gri)
+• Butoane:
+  - 🗑 Șterge Log: curăță fereastra
+  - 📁 Deschide Folder Logs: vezi fișierele log salvate
+
+
+📁 FIȘIERE IMPORTANTE
+════════════════════════════════════════════════════════════════════════════
+
+sku_list.txt
+   → Lista cu SKU-uri pentru import
+   → Format: un SKU pe linie
+   → Linii cu # sunt comentarii (ignorate)
+   
+   Exemplu:
+   # Telefoane Samsung
+   SAMSUNG-S24-128GB
+   SAMSUNG-S24-256GB
+   
+   # Accesorii
+   HUSA-SAMSUNG-CLEAR
+
+.env
+   → Configurația salvată (API keys, cursuri)
+   → Se creează automat la prima salvare din tab Configurare
+   → NU distribui acest fișier (conține API keys secrete!)
+
+logs/
+   → Folder cu toate log-urile importurilor
+   → Fișiere cu timestamp: import_20260114_1030.log
+
+images/
+   → Folder unde se descarcă imaginile temporar
+   → Imaginile sunt optimizate apoi încărcate în WooCommerce
+
+dist/ImportProduse.exe
+   → EXE-ul compilat (după rularea COMPILEAZA_EXE.bat)
+   → Poate fi copiat și rulat pe orice Windows
+
+
+🎨 FUNCȚIONALITĂȚI AVANSATE
+════════════════════════════════════════════════════════════════════════════
+
+
+DESCĂRCARE IMAGINI MULTIPLE
+────────────────────────────────────────────────────────────────────────────
+• Programul detectează TOATE imaginile din galeria produsului
+• Descarcă fiecare imagine la rezoluție maximă
+• Suportă formate: JPG, PNG, WEBP
+• Convertește automat WEBP → JPG
+
+
+OPTIMIZARE IMAGINI
+────────────────────────────────────────────────────────────────────────────
+• Resize la dimensiuni optime (max 2000x2000px)
+• Compresie inteligentă (reduce dimensiunea fără pierdere vizibilă)
+• Păstrează aspect ratio original
+• Economisește spațiu și bandwidth
+
+
+WEB SCRAPING INTELIGENT
+────────────────────────────────────────────────────────────────────────────
+• Extrage automat:
+  - Nume produs
+  - Preț în EUR
+  - Descriere completă
+  - Specificații tehnice
+  - Toate imaginile din galerie
+  - Categorie
+  - Disponibilitate stoc
+
+
+IMPORT WOOCOMMERCE
+────────────────────────────────────────────────────────────────────────────
+• Upload imagini direct în media library
+• Setează imaginea principală + galerie
+• Creează produs complet cu toate datele
+• Gestionare stoc automat
+• Suport pentru variante (dacă există)
+
+
+🔧 REZOLVARE PROBLEME
+════════════════════════════════════════════════════════════════════════════
+
+
+PROBLEMA: "Python was not found"
+────────────────────────────────────────────────────────────────────────────
+SOLUȚIE:
+1. Rulează INSTALARE_PYTHON.bat
+2. Dacă tot nu merge:
+   - Descarcă manual Python de la: https://www.python.org/downloads/
+   - La instalare BIFEAZĂ: "Add Python to PATH"
+   - Restart computer
+   - Încearcă din nou
+
+
+PROBLEMA: "Module not found" la pornire
+────────────────────────────────────────────────────────────────────────────
+SOLUȚIE:
+1. Rulează INSTALEAZA_DEPENDINTE.bat
+2. Dacă tot nu merge:
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
+
+
+PROBLEMA: "Test Conexiune" eșuează
+────────────────────────────────────────────────────────────────────────────
+SOLUȚIE:
+1. Verifică URL-ul WooCommerce (fără / la final)
+2. Verifică Consumer Key și Consumer Secret
+   - Generează chei noi de la: WooCommerce → Setări → Avansat → REST API
+   - Permisiuni: Read/Write
+3. Verifică conexiunea la internet
+4. Verifică dacă site-ul e accesibil
+
+
+PROBLEMA: Nu găsește produsul pe MobileSentrix
+────────────────────────────────────────────────────────────────────────────
+SOLUȚIE:
+1. Verifică SKU-ul (trebuie să fie exact ca pe site)
+2. Caută manual pe site pentru a verifica
+3. Unele produse pot fi indisponibile
+
+
+PROBLEMA: EXE-ul nu se creează
+────────────────────────────────────────────────────────────────────────────
+SOLUȚIE:
+1. Verifică dacă PyInstaller e instalat:
+   python -c "import PyInstaller"
+2. Instalează manual:
+   python -m pip install pyinstaller
+3. Rulează din nou COMPILEAZA_EXE.bat
+
+
+💡 SFATURI ȘI RECOMANDĂRI
+════════════════════════════════════════════════════════════════════════════
+
+✅ Testează cu 2-3 SKU-uri înainte de import masiv
+✅ Verifică conexiunea WooCommerce înainte de import
+✅ Ține backup la baza de date WooCommerce
+✅ Rulează importul când site-ul nu e foarte accesat
+✅ Pentru import mare (100+ produse), rulează în afara orelor de vârf
+✅ Verifică cursul valutar EUR/RON periodic
+✅ Compilează EXE-ul o singură dată, apoi poți șterge Python
+
+
+📞 SUPORT TEHNIC
+════════════════════════════════════════════════════════════════════════════
+
+Pentru probleme:
+1. Verifică fișierele log în folder logs/
+2. Verifică tab Log din program pentru mesaje de eroare
+3. Asigură-te că toate configurațiile sunt corecte
+
+
+🎉 FINALIZARE
+════════════════════════════════════════════════════════════════════════════
+
+Acum ai un program COMPLET pentru import automat de produse!
+
+• Interfață grafică prietenoasă
+• Descarcă toate pozele la rezoluție mare
+• Optimizează automat imaginile
+• Import direct în WooCommerce
+• Poate rula ca EXE fără Python
+
+SUCCES la import! 🚀
+
+
+════════════════════════════════════════════════════════════════════════════
+Versiune: 2.0.0 cu GUI
+Data: 14 Ianuarie 2026
+════════════════════════════════════════════════════════════════════════════

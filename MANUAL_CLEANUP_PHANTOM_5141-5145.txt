@@ -1,0 +1,78 @@
+════════════════════════════════════════════════════════════════════════════
+         QUICK FIX - Manual Cleanup Phantom Products (phpMyAdmin)
+════════════════════════════════════════════════════════════════════════════
+
+SITUAȚIE:
+---------
+Program a creat phantom IDs: 5141, 5142, 5143, 5144, 5145
+(Bazat pe logul din 15.01.2026 15:07)
+
+PAȘI - IN PHPYMYADMIN:
+─────────────────────
+
+1. Mergi la: Tools → SQL editor (sau Direct SQL tab)
+
+2. Rulează aceste comenzi ÎN ORDINE:
+
+   ──────────────────────────────────────────────────────────────
+
+   -- PASUL 1: Șterge meta_data asociat phantom IDs
+   DELETE FROM wplt_postmeta WHERE post_id IN (5141, 5142, 5143, 5144, 5145);
+
+   -- PASUL 2: Șterge înregistrările phantom din wp_posts
+   DELETE FROM wplt_posts WHERE ID IN (5141, 5142, 5143, 5144, 5145);
+
+   -- PASUL 3: Resetează AUTO_INCREMENT la poziția corectă
+   ALTER TABLE wplt_posts AUTO_INCREMENT=5146;
+
+   ──────────────────────────────────────────────────────────────
+
+3. VERIFICARE - Rulează aceste SELECT pentru a confirma:
+
+   -- Verifică că phantomurile sunt șterse
+   SELECT COUNT(*) as 'Phantom IDs ramase' 
+   FROM wplt_posts 
+   WHERE ID IN (5141, 5142, 5143, 5144, 5145);
+   
+   -- Rezultatul trebuie să fie: 0
+
+   -- Verifică AUTO_INCREMENT
+   SHOW TABLE STATUS FROM wordpress LIKE 'wp_posts';
+   
+   -- Verifică că e 5146 sau mai mare
+
+4. După cleanup:
+   - Inchide phpMyAdmin
+   - Relansează import_gui.py
+   - Încearcă din nou importul
+
+
+PENTRU ALTE PHANTOM IDS:
+───────────────────────
+
+Daca vezi alte phantom IDs în loguri, înlocuiește numerele:
+
+   DELETE FROM wplt_postmeta WHERE post_id IN (PHANTOM_ID_1, PHANTOM_ID_2, ...);
+   DELETE FROM wplt_posts WHERE ID IN (PHANTOM_ID_1, PHANTOM_ID_2, ...);
+   ALTER TABLE wplt_posts AUTO_INCREMENT=NEXT_ID;
+
+unde NEXT_ID = MAX(ID) + 1
+
+
+URGENT - DAC㐴 CEVA MERGE RĂU:
+──────────────────────────────
+
+Dacă situl devine gol sau se strică după cleanup:
+
+A) RESTAUREAZĂ BACKUP-ul WordPress:
+   1. Contact hosting provider
+   2. Cere restorarea din backup (Data: 15.01.2026 03:00)
+   3. Spune-le: "Restore WordPress database from backup"
+
+B) NU ȘTI ce să faci?
+   - Opreste importul
+   - Nu mai rula comenzi SQL
+   - Contactează suport hosting
+
+
+═════════════════════════════════════════════════════════════════════════════
