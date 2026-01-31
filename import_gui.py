@@ -444,20 +444,395 @@ class ImportProduse:
             messagebox.showerror("Eroare", f"Nu s-a putut reîncărca configurația:\n{e}")
     
     def generate_unique_sku(self, ean):
-        """Generează SKU secvențial în format EAN-13 cu prefix 890"""
-        # Format: 890 + [ID 5 cifre secvențial] + 00000 = 13 cifre (EAN-13)
-        # Prefix 890 = GS1 standard pentru utilizare internă
-        # Ușor de scris și memorat
-        
-        # Folosește ultima parte din EAN ca ID secvențial (0-99999)
+        """LEGACY - păstrat pentru compatibilitate. Folosește generate_webgsm_sku() pentru SKU-uri noi."""
         ean_int = int(ean) if ean.isdigit() else int(''.join(c for c in ean if c.isdigit()))
-        sequential_id = (ean_int % 100000)  # Obține 5 cifre din EAN
-        
-        # Format: 890 + ID (5 cifre) + 00000
+        sequential_id = (ean_int % 100000)
         sku = f"890{sequential_id:05d}00000"
-        
         return sku
-    
+
+    def generate_webgsm_sku(self, product_name, brand_piesa, counter):
+        """
+        Generează SKU format: WG-{MODEL}-{BRAND}-{NR}
+        Exemple: WG-IP13-JK-01, WG-IP14PM-GX-02, WG-S24U-ZY-01
+        """
+        model_map = {
+            'iphone 16 pro max': 'IP16PM',
+            'iphone 16 pro': 'IP16P',
+            'iphone 16 plus': 'IP16PL',
+            'iphone 16': 'IP16',
+            'iphone 15 pro max': 'IP15PM',
+            'iphone 15 pro': 'IP15P',
+            'iphone 15 plus': 'IP15PL',
+            'iphone 15': 'IP15',
+            'iphone 14 pro max': 'IP14PM',
+            'iphone 14 pro': 'IP14P',
+            'iphone 14 plus': 'IP14PL',
+            'iphone 14': 'IP14',
+            'iphone 13 pro max': 'IP13PM',
+            'iphone 13 pro': 'IP13P',
+            'iphone 13 mini': 'IP13M',
+            'iphone 13': 'IP13',
+            'iphone 12 pro max': 'IP12PM',
+            'iphone 12 pro': 'IP12P',
+            'iphone 12 mini': 'IP12M',
+            'iphone 12': 'IP12',
+            'iphone 11 pro max': 'IP11PM',
+            'iphone 11 pro': 'IP11P',
+            'iphone 11': 'IP11',
+            'iphone xs max': 'IPXSM',
+            'iphone xs': 'IPXS',
+            'iphone xr': 'IPXR',
+            'iphone x': 'IPX',
+            'iphone se': 'IPSE',
+            'iphone 8 plus': 'IP8P',
+            'iphone 8': 'IP8',
+            'iphone 7 plus': 'IP7P',
+            'iphone 7': 'IP7',
+            'galaxy s24 ultra': 'S24U',
+            'galaxy s24+': 'S24P',
+            'galaxy s24 plus': 'S24P',
+            'galaxy s24': 'S24',
+            'galaxy s23 ultra': 'S23U',
+            'galaxy s23+': 'S23P',
+            'galaxy s23 plus': 'S23P',
+            'galaxy s23': 'S23',
+            'galaxy s22 ultra': 'S22U',
+            'galaxy s22+': 'S22P',
+            'galaxy s22': 'S22',
+            'galaxy s21 ultra': 'S21U',
+            'galaxy s21+': 'S21P',
+            'galaxy s21': 'S21',
+            'galaxy z fold 5': 'ZF5',
+            'galaxy z fold 4': 'ZF4',
+            'galaxy z flip 5': 'ZFL5',
+            'galaxy z flip 4': 'ZFL4',
+            'galaxy a54': 'A54',
+            'galaxy a53': 'A53',
+            'galaxy a52': 'A52',
+            'galaxy a51': 'A51',
+            'galaxy a34': 'A34',
+            'galaxy a33': 'A33',
+            'galaxy a14': 'A14',
+            'pixel 8 pro': 'PX8P',
+            'pixel 8': 'PX8',
+            'pixel 7 pro': 'PX7P',
+            'pixel 7': 'PX7',
+        }
+
+        name_lower = product_name.lower()
+        model_code = 'UNK'
+        for model, code in model_map.items():
+            if model in name_lower:
+                model_code = code
+                break
+
+        brand_code = brand_piesa.upper()[:2] if brand_piesa else 'XX'
+
+        return f"WG-{model_code}-{brand_code}-{counter:02d}"
+
+    def extract_product_attributes(self, product_name, description=''):
+        """
+        Extrage atributele WooCommerce din titlul produsului.
+        Returnează: pa_model, pa_calitate, pa_brand-piesa, pa_tehnologie
+        """
+        text = f"{product_name} {description}".lower()
+
+        # MODEL COMPATIBIL (ordinea contează - cele mai specifice primele)
+        model = ''
+        model_patterns = [
+            ('iphone 16 pro max', 'iPhone 16 Pro Max'),
+            ('iphone 16 pro', 'iPhone 16 Pro'),
+            ('iphone 16 plus', 'iPhone 16 Plus'),
+            ('iphone 16', 'iPhone 16'),
+            ('iphone 15 pro max', 'iPhone 15 Pro Max'),
+            ('iphone 15 pro', 'iPhone 15 Pro'),
+            ('iphone 15 plus', 'iPhone 15 Plus'),
+            ('iphone 15', 'iPhone 15'),
+            ('iphone 14 pro max', 'iPhone 14 Pro Max'),
+            ('iphone 14 pro', 'iPhone 14 Pro'),
+            ('iphone 14 plus', 'iPhone 14 Plus'),
+            ('iphone 14', 'iPhone 14'),
+            ('iphone 13 pro max', 'iPhone 13 Pro Max'),
+            ('iphone 13 pro', 'iPhone 13 Pro'),
+            ('iphone 13 mini', 'iPhone 13 Mini'),
+            ('iphone 13', 'iPhone 13'),
+            ('iphone 12 pro max', 'iPhone 12 Pro Max'),
+            ('iphone 12 pro', 'iPhone 12 Pro'),
+            ('iphone 12 mini', 'iPhone 12 Mini'),
+            ('iphone 12', 'iPhone 12'),
+            ('iphone 11 pro max', 'iPhone 11 Pro Max'),
+            ('iphone 11 pro', 'iPhone 11 Pro'),
+            ('iphone 11', 'iPhone 11'),
+            ('iphone xs max', 'iPhone XS Max'),
+            ('iphone xs', 'iPhone XS'),
+            ('iphone xr', 'iPhone XR'),
+            ('iphone x', 'iPhone X'),
+            ('iphone se', 'iPhone SE'),
+            ('galaxy s24 ultra', 'Galaxy S24 Ultra'),
+            ('galaxy s24+', 'Galaxy S24+'),
+            ('galaxy s24', 'Galaxy S24'),
+            ('galaxy s23 ultra', 'Galaxy S23 Ultra'),
+            ('galaxy s23+', 'Galaxy S23+'),
+            ('galaxy s23', 'Galaxy S23'),
+            ('galaxy s22 ultra', 'Galaxy S22 Ultra'),
+            ('galaxy s22', 'Galaxy S22'),
+            ('galaxy s21 ultra', 'Galaxy S21 Ultra'),
+            ('galaxy s21', 'Galaxy S21'),
+            ('galaxy z fold 5', 'Galaxy Z Fold 5'),
+            ('galaxy z fold 4', 'Galaxy Z Fold 4'),
+            ('galaxy z flip 5', 'Galaxy Z Flip 5'),
+            ('galaxy z flip 4', 'Galaxy Z Flip 4'),
+            ('galaxy a54', 'Galaxy A54'),
+            ('galaxy a53', 'Galaxy A53'),
+            ('galaxy a52', 'Galaxy A52'),
+            ('galaxy a51', 'Galaxy A51'),
+            ('galaxy a34', 'Galaxy A34'),
+            ('galaxy a14', 'Galaxy A14'),
+            ('pixel 8 pro', 'Pixel 8 Pro'),
+            ('pixel 8', 'Pixel 8'),
+            ('pixel 7 pro', 'Pixel 7 Pro'),
+            ('pixel 7', 'Pixel 7'),
+        ]
+        for pattern, value in model_patterns:
+            if pattern in text:
+                model = value
+                break
+
+        # CALITATE
+        calitate = 'Aftermarket'
+        if 'service pack' in text or ('original' in text and 'genuine' in text):
+            calitate = 'Service Pack'
+        elif 'genuine' in text:
+            calitate = 'Service Pack'
+        elif 'premium' in text or ('oem' in text and 'premium' in text):
+            calitate = 'Premium OEM'
+        elif 'oem' in text:
+            calitate = 'Premium OEM'
+        elif 'refurbished' in text or 'refurb' in text:
+            calitate = 'Refurbished'
+
+        # BRAND PIESA
+        brand_piesa = ''
+        brand_patterns = [
+            ('JK', [' jk ', ' jk-', '(jk)', 'jk incell', 'jk soft']),
+            ('GX', [' gx ', ' gx-', '(gx)', 'gx soft', 'gx hard']),
+            ('ZY', [' zy ', ' zy-', '(zy)', 'zy soft']),
+            ('RJ', [' rj ', ' rj-', '(rj)', 'rj incell']),
+            ('HEX', [' hex ', ' hex-', '(hex)']),
+            ('Foxconn', ['foxconn']),
+            ('BOE', [' boe ', '(boe)']),
+            ('Tianma', ['tianma']),
+        ]
+        padded_name = f' {product_name} '.lower()
+        padded_text = f' {product_name} {description} '.lower()
+        for brand, keywords in brand_patterns:
+            if any(kw in padded_text for kw in keywords):
+                brand_piesa = brand
+                break
+        if not brand_piesa:
+            if 'apple' in text and ('original' in text or 'genuine' in text or 'service pack' in text):
+                brand_piesa = 'Apple Original'
+            elif 'samsung' in text and ('original' in text or 'genuine' in text or 'service pack' in text):
+                brand_piesa = 'Samsung Original'
+
+        # TEHNOLOGIE (doar pentru ecrane)
+        tehnologie = ''
+        if any(x in text for x in ['display', 'screen', 'lcd', 'oled', 'ecran', 'assembly']):
+            if 'soft oled' in text:
+                tehnologie = 'Soft OLED'
+            elif 'hard oled' in text:
+                tehnologie = 'Hard OLED'
+            elif 'amoled' in text:
+                tehnologie = 'AMOLED'
+            elif 'oled' in text and ('original' in text or 'genuine' in text):
+                tehnologie = 'OLED Original'
+            elif 'oled' in text:
+                tehnologie = 'OLED'
+            elif 'incell' in text or 'in-cell' in text:
+                tehnologie = 'Incell'
+            elif 'tft' in text:
+                tehnologie = 'TFT'
+            elif 'lcd' in text:
+                tehnologie = 'LCD'
+
+        return {
+            'pa_model': model,
+            'pa_calitate': calitate,
+            'pa_brand_piesa': brand_piesa,
+            'pa_tehnologie': tehnologie
+        }
+
+    def get_webgsm_category(self, product_name, product_type=''):
+        """
+        Returnează categoria WooCommerce cu slug corect.
+        Format: slug-categorie (ex: ecrane-iphone, baterii-samsung)
+        """
+        text = product_name.lower()
+
+        # Detectare tip produs
+        tip = ''
+        if any(x in text for x in ['display', 'screen', 'lcd', 'oled', 'ecran', 'amoled']):
+            tip = 'ecrane'
+        elif any(x in text for x in ['battery', 'baterie', 'acumulator']):
+            tip = 'baterii'
+        elif any(x in text for x in ['camera', 'cameră', 'lens']):
+            tip = 'camere'
+        elif any(x in text for x in ['flex', 'cable', 'conector', 'connector', 'charging port', 'dock']):
+            tip = 'flex-uri'
+        elif any(x in text for x in ['housing', 'back glass', 'carcas', 'frame', 'back cover', 'rear glass']):
+            tip = 'carcase'
+        elif any(x in text for x in ['speaker', 'earpiece', 'difuzor', 'buzzer']):
+            tip = 'difuzoare'
+        elif any(x in text for x in ['button', 'buton', 'power button', 'volume']):
+            tip = 'butoane'
+        elif any(x in text for x in ['tempered glass', 'screen protector', 'folie']):
+            tip = 'folii-protectie'
+        elif any(x in text for x in ['charger', 'incarcator', 'adapter']):
+            tip = 'incarcatoare'
+        else:
+            tip = 'accesorii-service'
+
+        # Detectare brand telefon
+        brand = ''
+        if 'iphone' in text or 'ipad' in text:
+            brand = 'iphone'
+        elif 'galaxy' in text or 'samsung' in text:
+            brand = 'samsung'
+        elif 'huawei' in text or 'honor' in text:
+            brand = 'huawei'
+        elif 'xiaomi' in text or 'redmi' in text or 'poco' in text:
+            brand = 'xiaomi'
+        elif 'pixel' in text or 'google' in text:
+            brand = 'google'
+        elif 'motorola' in text or 'moto ' in text:
+            brand = 'motorola'
+        elif 'oneplus' in text:
+            brand = 'oneplus'
+
+        if brand:
+            return f"{tip}-{brand}"
+        return tip
+
+    def extract_compatibility_codes(self, description):
+        """
+        Extrage coduri Apple (A####) din descriere.
+        Returnează string cu coduri separate prin virgulă.
+        """
+        pattern = r'\bA\d{4}\b'
+        codes = re.findall(pattern, description)
+        return ', '.join(sorted(set(codes))) if codes else ''
+
+    def detect_screen_features(self, product_name, description=''):
+        """
+        Detectează caracteristici ecran: IC Movable, TrueTone support.
+        """
+        text = f"{product_name} {description}".lower()
+
+        ic_movable = 'true' if any(x in text for x in [
+            'with ic', 'ic installed', 'ic included', 'movable ic',
+            'transplant ic', 'ic transferabil', 'ic chip', 'flex with ic'
+        ]) else 'false'
+
+        truetone = 'true' if any(x in text for x in [
+            'true tone', 'truetone', 'true-tone', 'supports true tone',
+            'support truetone', 'true tone supported'
+        ]) else 'false'
+
+        return {
+            'ic_movable': ic_movable,
+            'truetone_support': truetone
+        }
+
+    def _detect_tip_produs_ro(self, product_name):
+        """Detectează tipul produsului în română din titlul EN."""
+        text = product_name.lower()
+        if any(x in text for x in ['display', 'screen', 'oled', 'lcd', 'digitizer']):
+            return 'Ecran'
+        if any(x in text for x in ['battery', 'baterie', 'acumulator']):
+            return 'Baterie'
+        if any(x in text for x in ['camera', 'cameră', 'lens']):
+            return 'Cameră'
+        if any(x in text for x in ['flex', 'cable', 'connector', 'charging port', 'dock']):
+            return 'Flex'
+        if any(x in text for x in ['housing', 'back glass', 'frame', 'back cover', 'rear glass']):
+            return 'Carcasă'
+        if any(x in text for x in ['speaker', 'earpiece', 'buzzer']):
+            return 'Difuzor'
+        if any(x in text for x in ['button', 'power button', 'volume']):
+            return 'Buton'
+        return 'Piesă'
+
+    def generate_seo_title(self, product_name, model, brand_piesa, tehnologie):
+        """
+        Generează titlu SEO optimizat.
+        Format: "{Tip} {Model} {Tehnologie} {Brand} - Garanție 24 Luni | WebGSM"
+        Exemplu: "Ecran iPhone 13 OLED JK - Garanție 24 Luni | WebGSM"
+        """
+        tip_ro = self._detect_tip_produs_ro(product_name)
+
+        parts = [tip_ro]
+        if model:
+            parts.append(model)
+        if tehnologie:
+            parts.append(tehnologie)
+        if brand_piesa:
+            parts.append(brand_piesa)
+
+        title = ' '.join(parts)
+        seo = f"{title} - Garanție 24 Luni | WebGSM"
+        return self.fix_romanian_diacritics(seo)
+
+    def generate_seo_description(self, product_name, model, brand_piesa, tehnologie, calitate):
+        """
+        Generează meta description SEO (max 155 caractere).
+        Exemplu: "Ecran iPhone 13 OLED JK calitate Premium OEM. Garanție 24 luni. Livrare rapidă Timișoara și România."
+        """
+        tip_ro = self._detect_tip_produs_ro(product_name)
+
+        desc = f"{tip_ro} {model or ''}"
+        if tehnologie:
+            desc += f" {tehnologie}"
+        if brand_piesa:
+            desc += f" {brand_piesa}"
+        if calitate:
+            desc += f" calitate {calitate}"
+
+        desc += ". Garanție 24 luni. Livrare rapidă Timișoara și România."
+
+        # Curăță spații duble
+        desc = ' '.join(desc.split())
+
+        if len(desc) > 155:
+            desc = desc[:152] + "..."
+
+        return self.fix_romanian_diacritics(desc)
+
+    def generate_focus_keyword(self, product_name, model):
+        """
+        Generează focus keyword pentru Rank Math SEO.
+        Exemplu: "ecran iphone 13"
+        """
+        tip_map = {
+            'display': 'ecran', 'screen': 'ecran', 'oled': 'ecran',
+            'lcd': 'ecran', 'digitizer': 'ecran',
+            'battery': 'baterie', 'acumulator': 'baterie',
+            'camera': 'camera', 'lens': 'camera',
+            'flex': 'flex', 'cable': 'flex', 'connector': 'flex',
+            'housing': 'carcasa', 'back glass': 'carcasa', 'frame': 'carcasa',
+            'speaker': 'difuzor', 'earpiece': 'difuzor',
+            'button': 'buton',
+        }
+        text = product_name.lower()
+        tip_ro = 'piesa'
+        for en, ro in tip_map.items():
+            if en in text:
+                tip_ro = ro
+                break
+
+        if model:
+            return f"{tip_ro} {model}".lower()
+        return tip_ro
+
     def test_connection(self):
         """Testează conexiunea la WooCommerce"""
         try:
@@ -520,93 +895,102 @@ class ImportProduse:
         self.progress_var.set("Import oprit")
     
     def run_import(self):
-        """Execută exportul în CSV cu upload imagini pe WordPress"""
+        """Execută exportul în CSV format WebGSM cu upload imagini pe WordPress"""
         try:
             self.log("=" * 70, "INFO")
-            self.log(f"🚀 START PROCESARE PRODUSE (Mod: CSV + Upload Imagini)", "INFO")
+            self.log(f"🚀 START PROCESARE PRODUSE (Mod: CSV WebGSM + Upload Imagini)", "INFO")
             self.log("=" * 70, "INFO")
-            
+
             # Citește SKU-uri
             skus = self.read_sku_file(self.sku_file_var.get())
             self.log(f"📋 Găsite {len(skus)} SKU-uri pentru procesare", "INFO")
-            
+
             success_count = 0
             error_count = 0
-            woo_success = 0
-            woo_errors = 0
+            sku_counter = 0  # Counter global pentru SKU-uri WebGSM
             products_data = []  # Lista pentru CSV
-            
+
             for idx, sku in enumerate(skus, 1):
                 if not self.running:
                     break
-                
+
                 self.progress_var.set(f"Procesez produs {idx}/{len(skus)}: {sku}")
                 self.log(f"\n" + "="*70, "INFO")
-                self.log(f"[{idx}/{len(skus)}] 🔵 START procesare EAN: {sku}", "INFO")
+                self.log(f"[{idx}/{len(skus)}] 🔵 START procesare: {sku}", "INFO")
                 self.log(f"="*70, "INFO")
-                
+
                 try:
                     # Scraping produs de pe MobileSentrix
                     product_data = self.scrape_product(sku)
-                    
+
                     if product_data:
-                        # Salvează SKU-ul furnizor înainte de a fi suprascris
-                        supplier_sku = product_data.get('sku', '')  # SKU de la furnizor (107182127516)
-                        
+                        # Salvează SKU-ul furnizor
+                        supplier_sku = product_data.get('sku', '')
+
+                        # Generează WebGSM SKU
+                        sku_counter += 1
+                        brand_piesa = product_data.get('pa_brand_piesa', '')
+                        webgsm_sku = self.generate_webgsm_sku(
+                            product_data.get('name', ''),
+                            brand_piesa,
+                            sku_counter
+                        )
+
                         # Adaugă date suplimentare
-                        product_data['sku_generated'] = self.generate_unique_sku(sku)  # SKU generat WEBGSM
-                        product_data['supplier_sku'] = supplier_sku  # SKU furnizor (pentru EAN în CSV)
+                        product_data['webgsm_sku'] = webgsm_sku
+                        product_data['supplier_sku'] = supplier_sku
                         product_data['ean'] = sku
-                        
+
                         success_count += 1
-                        self.log(f"✓ Produs procesat cu succes!", "SUCCESS")
-                        
-                        # Salvează în listă pentru CSV
+                        self.log(f"✓ Produs procesat! SKU: {webgsm_sku}", "SUCCESS")
+
                         products_data.append(product_data)
                     else:
                         error_count += 1
                         self.log(f"✗ Nu s-au putut extrage datele produsului", "ERROR")
-                        
+
                 except Exception as e:
                     error_count += 1
                     self.log(f"✗ Eroare: {e}", "ERROR")
-            
+
             # CREARE CSV
             csv_filename = None
             csv_path = None
             if products_data:
                 self.log("\n" + "=" * 70, "INFO")
-                self.log("📝 CREARE FIȘIER CSV...", "INFO")
+                self.log("📝 CREARE FIȘIER CSV WEBGSM...", "INFO")
                 self.log("=" * 70, "INFO")
-                
+
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                csv_filename = f"export_produse_{timestamp}.csv"
+                csv_filename = f"export_webgsm_{timestamp}.csv"
                 csv_path = self.export_to_csv(products_data, csv_filename)
-                
+
                 if csv_path:
-                    self.log(f"\n✅ CSV creat: {csv_path}", "SUCCESS")
-            
+                    self.log(f"\n✅ CSV WebGSM creat: {csv_path}", "SUCCESS")
+
             # Sumar final
             self.log("\n" + "=" * 70, "INFO")
-            self.log(f"📊 SUMAR PROCESARE:", "INFO")
+            self.log(f"📊 SUMAR PROCESARE WEBGSM:", "INFO")
             self.log(f"   ✓ Produse procesate cu succes: {success_count}", "SUCCESS")
             self.log(f"   ✗ Erori scraping: {error_count}", "ERROR")
             self.log(f"   📦 Total SKU-uri: {len(skus)}", "INFO")
             self.log(f"   📁 Imagini salvate în: images/", "INFO")
+            if products_data:
+                self.log(f"   🏷️ SKU-uri generate: WG-...-01 pana la WG-...-{sku_counter:02d}", "INFO")
             self.log("=" * 70, "INFO")
-            
+
             csv_info = f"\nFișier CSV: {csv_filename}" if csv_filename else ""
-            messagebox.showinfo("Finalizat", 
-                f"Procesare finalizată!\n\nProduse procesate: {success_count}\nErori: {error_count}{csv_info}\nFolderul imagini: images/")
-            
+            messagebox.showinfo("Finalizat",
+                f"Procesare WebGSM finalizată!\n\nProduse procesate: {success_count}\nErori: {error_count}{csv_info}\nFolderul imagini: images/")
+
             # Deschide folderul data cu CSV-ul
             if csv_path:
                 os.startfile(Path("data"))
-            
+
         except Exception as e:
             self.log(f"✗ Eroare critică: {e}", "ERROR")
             messagebox.showerror("Eroare", f"Eroare critică:\n{e}")
-            
+
         finally:
             self.progress_bar.stop()
             self.btn_start.config(state='normal')
@@ -758,22 +1142,46 @@ class ImportProduse:
         
         # Construiește titlu Long Tail
         longtail = f"{piece_name} {phone_model} {quality} {color}"
-        
+
+        # Corectează diacriticele (sedilă → virgulă)
+        longtail = self.fix_romanian_diacritics(longtail)
+
         return longtail
-        """Elimina diacriticele din text (ă→a, ț→t, ș→s, î→i, etc.)"""
-        import unicodedata
+
+    def remove_diacritics(self, text):
+        """DEZACTIVAT - Păstrăm diacriticele românești corecte.
+        Apelează fix_romanian_diacritics() în loc să elimine diacriticele."""
+        return self.fix_romanian_diacritics(text)
+
+    def fix_romanian_diacritics(self, text):
+        """
+        Convertește diacriticele cu sedilă în cele corecte cu virgulă.
+        Google Translate uneori returnează sedilă (ş, ţ) în loc de virgulă (ș, ț).
+
+        Corectări:
+          ş (U+015F, s with cedilla) → ș (U+0219, s with comma below)
+          ţ (U+0163, t with cedilla) → ț (U+021B, t with comma below)
+          Ş (U+015E) → Ș (U+0218)
+          Ţ (U+0162) → Ț (U+021A)
+        """
         if not text:
             return text
-        
-        # Normalizează textul și separă caracterele de diacritice
-        nfkd_form = unicodedata.normalize('NFKD', text)
-        return ''.join([c for c in nfkd_form if not unicodedata.combining(c)])
-    
+
+        # Sedilă → Virgulă (lowercase)
+        text = text.replace('\u015f', '\u0219')  # ş → ș
+        text = text.replace('\u0163', '\u021b')  # ţ → ț
+
+        # Sedilă → Virgulă (uppercase)
+        text = text.replace('\u015e', '\u0218')  # Ş → Ș
+        text = text.replace('\u0162', '\u021a')  # Ţ → Ț
+
+        return text
+
     def translate_text(self, text, source='en', target='ro'):
-        """Traduce text folosind Google Translate (fara diacritice pentru romana)."""
+        """Traduce text folosind Google Translate (cu diacritice românești corecte)."""
         if not text or not text.strip():
             return text
-        
+
         try:
             translator = GoogleTranslator(source=source, target=target)
             # Împarte text în bucăți dacă e prea lung (max 5000 caractere)
@@ -784,7 +1192,7 @@ class ImportProduse:
                 # Împarte în paragrafe și traduce separat
                 chunks = []
                 current_chunk = ""
-                
+
                 for paragraph in text.split('\n'):
                     if len(current_chunk) + len(paragraph) + 1 <= max_length:
                         current_chunk += paragraph + '\n'
@@ -792,21 +1200,21 @@ class ImportProduse:
                         if current_chunk:
                             chunks.append(current_chunk)
                         current_chunk = paragraph + '\n'
-                
+
                 if current_chunk:
                     chunks.append(current_chunk)
-                
+
                 # Traduce fiecare bucată
                 translated_chunks = []
                 for chunk in chunks:
                     translated_chunks.append(translator.translate(chunk))
-                
+
                 translated = '\n'.join(translated_chunks)
-            
-            # Elimina diacriticele dacă traducem în română
+
+            # Corectează sedilă → virgulă (ş→ș, ţ→ț) pentru română
             if target == 'ro':
-                translated = self.remove_diacritics(translated)
-            
+                translated = self.fix_romanian_diacritics(translated)
+
             return translated
         
         except Exception as e:
@@ -814,128 +1222,191 @@ class ImportProduse:
             return text  # Returnează textul original dacă traducerea eșuează
     
     def export_to_csv(self, products_data, filename="export_produse.csv"):
-        """Exportă produsele în CSV cu toate informațiile inclusiv pozele uploadate pe WordPress"""
+        """Exportă produsele în CSV format WebGSM cu atribute, ACF meta și SEO Rank Math"""
         import csv
-        
+
         try:
             csv_path = Path("data") / filename
-            self.log(f"📄 Creez fișier CSV: {csv_path}", "INFO")
+            self.log(f"📄 Creez fișier CSV WebGSM: {csv_path}", "INFO")
             self.log(f"⏳ Procesez {len(products_data)} produse cu upload imagini pe WordPress...", "INFO")
-            
+
             with open(csv_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
-                fieldnames = ['ID', 'Type', 'SKU', 'EAN', 'Name', 'Published', 'Is featured?', 'Visibility in catalog',
-                             'Short description', 'Description', 'Tax status', 'Tax class', 'In stock?', 'Stock',
-                             'Regular price', 'Categories', 'Tags', 'Images', 'Parent', 'meta:_warranty_period']
+                fieldnames = [
+                    'ID', 'Type', 'SKU', 'Name', 'Published', 'Is featured?',
+                    'Visibility in catalog', 'Short description', 'Description',
+                    'Tax status', 'Tax class', 'In stock?', 'Stock', 'Regular price',
+                    'Categories', 'Tags', 'Images', 'Parent',
+                    # ATRIBUTE WOOCOMMERCE (4 atribute x 4 coloane)
+                    'Attribute 1 name', 'Attribute 1 value(s)', 'Attribute 1 visible', 'Attribute 1 global',
+                    'Attribute 2 name', 'Attribute 2 value(s)', 'Attribute 2 visible', 'Attribute 2 global',
+                    'Attribute 3 name', 'Attribute 3 value(s)', 'Attribute 3 visible', 'Attribute 3 global',
+                    'Attribute 4 name', 'Attribute 4 value(s)', 'Attribute 4 visible', 'Attribute 4 global',
+                    # ACF META
+                    'meta:gtin_ean', 'meta:sku_furnizor', 'meta:furnizor_activ',
+                    'meta:pret_achizitie', 'meta:locatie_stoc', 'meta:garantie_luni',
+                    'meta:coduri_compatibilitate', 'meta:ic_movable', 'meta:truetone_support',
+                    # SEO RANK MATH
+                    'meta:rank_math_title', 'meta:rank_math_description', 'meta:rank_math_focus_keyword'
+                ]
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                
+
                 writer.writeheader()
-                
+
                 for idx, product in enumerate(products_data, 1):
                     self.log(f"🔄 Proceseaza produs {idx}/{len(products_data)}: {product.get('name', 'N/A')}", "INFO")
-                    
+
                     # Colectează URL-urile imaginilor cu upload pe WordPress
                     image_urls = []
                     if product.get('images'):
                         for img_idx, img in enumerate(product['images']):
                             img_path = None
-                            
+
                             if isinstance(img, dict):
-                                # Preferă local_path (deja descărcat) pentru upload
                                 if 'local_path' in img:
                                     img_path = img['local_path']
                             else:
-                                # E string direct (local path)
                                 img_path = str(img)
-                            
+
                             if img_path and Path(img_path).exists():
-                                # UPLOAD imaginea pe WordPress
                                 self.log(f"   📤 Upload imagine {img_idx + 1}/{len(product['images'])}: {Path(img_path).name}", "INFO")
                                 upload_result = self.upload_image_to_wordpress(img_path)
-                                
+
                                 if upload_result:
-                                    # upload_result este dict cu {'id', 'src', 'name'}
                                     wp_url = upload_result.get('src') if isinstance(upload_result, dict) else upload_result
                                     image_urls.append(wp_url)
                                     self.log(f"   ✓ Imagine uploadată pe WordPress: {wp_url}", "SUCCESS")
                                 else:
-                                    # Fallback: foloseşte URL original de pe MobileSentrix
                                     if isinstance(img, dict) and 'src' in img:
                                         image_urls.append(img['src'])
                                         self.log(f"   ⚠ Upload eșuat, folosesc URL original", "WARNING")
                             elif isinstance(img, dict) and 'src' in img:
-                                # Nu avem local path, folosim URL original MobileSentrix
                                 image_urls.append(img['src'])
-                    
-                    # Calculează preț RON
-                    price_ron = product['price']
+
+                    # Calculează preț RON (păstrează EUR original)
+                    price_eur = product['price']
+                    price_ron = price_eur
                     if self.convert_price_var.get():
                         exchange_rate = float(self.exchange_rate_var.get())
-                        price_ron = product['price'] * exchange_rate
-                    
+                        price_ron = price_eur * exchange_rate
+
                     # Curăță numele (elimină " Copy" de la sfârșit)
                     clean_name = product.get('name', 'N/A')
                     if clean_name.endswith(' Copy'):
-                        clean_name = clean_name[:-5]  # Elimină ultimele 5 caractere (" Copy")
-                    
+                        clean_name = clean_name[:-5]
+
                     # Traduce numele în română
                     clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
                     self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
-                    
+
                     # Construiește titlu Long Tail SEO optimizat
                     description_for_longtail = product.get('description', '')
                     longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail)
                     self.log(f"   📝 Titlu Long Tail: {longtail_title}", "INFO")
-                    
+
                     # Curăță descrierea (elimină URL-uri)
                     clean_desc = product.get('description', '')[:500]
-                    import re
-                    clean_desc = re.sub(r'https?://\S+', '', clean_desc).strip()  # Elimină toate URL-urile
-                    
+                    clean_desc = re.sub(r'https?://\S+', '', clean_desc).strip()
+
                     # Traduce descrierea în română
                     clean_desc_ro = self.translate_text(clean_desc, source='en', target='ro')
                     self.log(f"   🌍 Descriere tradusă: {len(clean_desc)} → {len(clean_desc_ro)} caractere", "INFO")
-                    
+
+                    # SKU: folosește WebGSM SKU
+                    sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
+
                     # EAN: folosește supplier_sku (SKU furnizor 107182127516)
                     ean_value = product.get('supplier_sku', '') or product.get('sku', '')
-                    
-                    # SKU: folosește SKU-ul generat WEBGSM
-                    sku_value = product.get('sku_generated', product.get('sku', 'N/A'))
-                    
-                    # Detectează garantia pe baza categoriei și numelui
-                    warranty = self.detect_warranty(clean_name_ro, product.get('category_path', ''))
-                    self.log(f"   ⏱️ Garantie detectată: {warranty}", "INFO")
-                    
-                    # Combină toate imaginile în format WooCommerce (separare cu virgulă)
+
+                    # Detectează garanția (număr luni)
+                    warranty_text = self.detect_warranty(clean_name_ro, product.get('category_path', ''))
+                    # Convertește "12 luni" -> 12, "6 luni" -> 6, etc.
+                    warranty_months = re.search(r'(\d+)', warranty_text)
+                    warranty_months = warranty_months.group(1) if warranty_months else '12'
+                    self.log(f"   ⏱️ Garantie: {warranty_months} luni", "INFO")
+
+                    # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
-                    
+
+                    # Atribute din produs (pre-extrase în scrape_product)
+                    pa_model = product.get('pa_model', '')
+                    pa_calitate = product.get('pa_calitate', 'Aftermarket')
+                    pa_brand_piesa = product.get('pa_brand_piesa', '')
+                    pa_tehnologie = product.get('pa_tehnologie', '')
+
+                    # Categorii: folosește slug WebGSM
+                    category_slug = product.get('category_slug', '')
+                    # Păstrează și categoria ierarhică dacă slug-ul e gol
+                    categories = category_slug if category_slug else product.get('category_path', '')
+
+                    # SEO Rank Math (funcții dedicate cu diacritice corecte)
+                    original_name = product.get('name', '')
+                    seo_title = self.generate_seo_title(original_name, pa_model, pa_brand_piesa, pa_tehnologie)
+                    seo_description = self.generate_seo_description(original_name, pa_model, pa_brand_piesa, pa_tehnologie, pa_calitate)
+                    seo_keyword = self.generate_focus_keyword(original_name, pa_model)
+
+                    self.log(f"   🔍 SEO: {seo_title[:60]}...", "INFO")
+
                     row = {
-                        'ID': '',  # Gol pentru produse noi
-                        'Type': 'simple',  # Tip produs: simple
-                        'SKU': sku_value,  # SKU generat (doar cifre pentru cod de bare)
-                        'EAN': ean_value,  # EAN/UPC (SKU furnizor 107182127516)
-                        'Name': longtail_title,  # Titlu Long Tail SEO optimizat
-                        'Published': '1',  # Publicat automat
-                        'Is featured?': '0',  # Nu e featured
-                        'Visibility in catalog': 'visible',  # Vizibil în catalog
-                        'Short description': clean_desc_ro[:160],  # Descriere scurtă (max 160 char)
-                        'Description': clean_desc_ro,  # Descriere completă tradusă în română
-                        'Tax status': 'taxable',  # Taxabil
-                        'Tax class': '',  # Clasă TVA standard
-                        'In stock?': '1',  # În stoc
-                        'Stock': product.get('stock', '100'),  # Stock default 100
-                        'Regular price': f"{price_ron:.2f}",  # Preț în RON
-                        'Categories': product.get('category_path', ''),  # WooCommerce: Parent > Child
-                        'Tags': product.get('tags', ''),  # Tags
-                        'Images': all_images,  # Toate imaginile separate prin virgulă
-                        'Parent': '',  # Gol pentru produse simple
-                        'meta:_warranty_period': warranty  # Meta data: perioada de garantie
+                        'ID': '',
+                        'Type': 'simple',
+                        'SKU': sku_value,
+                        'Name': longtail_title,
+                        'Published': '1',
+                        'Is featured?': '0',
+                        'Visibility in catalog': 'visible',
+                        'Short description': clean_desc_ro[:160],
+                        'Description': clean_desc_ro,
+                        'Tax status': 'taxable',
+                        'Tax class': '',
+                        'In stock?': '1',
+                        'Stock': product.get('stock', '100'),
+                        'Regular price': f"{price_ron:.2f}",
+                        'Categories': categories,
+                        'Tags': product.get('tags', ''),
+                        'Images': all_images,
+                        'Parent': '',
+                        # ATRIBUT 1: Model Compatibil
+                        'Attribute 1 name': 'Model Compatibil',
+                        'Attribute 1 value(s)': pa_model,
+                        'Attribute 1 visible': '1',
+                        'Attribute 1 global': '1',
+                        # ATRIBUT 2: Calitate
+                        'Attribute 2 name': 'Calitate',
+                        'Attribute 2 value(s)': pa_calitate,
+                        'Attribute 2 visible': '1',
+                        'Attribute 2 global': '1',
+                        # ATRIBUT 3: Brand Piesa
+                        'Attribute 3 name': 'Brand Piesa',
+                        'Attribute 3 value(s)': pa_brand_piesa,
+                        'Attribute 3 visible': '1',
+                        'Attribute 3 global': '1',
+                        # ATRIBUT 4: Tehnologie
+                        'Attribute 4 name': 'Tehnologie',
+                        'Attribute 4 value(s)': pa_tehnologie,
+                        'Attribute 4 visible': '1',
+                        'Attribute 4 global': '1',
+                        # ACF META
+                        'meta:gtin_ean': ean_value,
+                        'meta:sku_furnizor': product.get('supplier_sku', ''),
+                        'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
+                        'meta:pret_achizitie': f"{price_eur:.2f}",
+                        'meta:locatie_stoc': product.get('locatie_stoc', 'depozit_central'),
+                        'meta:garantie_luni': warranty_months,
+                        'meta:coduri_compatibilitate': product.get('coduri_compatibilitate', ''),
+                        'meta:ic_movable': product.get('ic_movable', 'false'),
+                        'meta:truetone_support': product.get('truetone_support', 'false'),
+                        # SEO RANK MATH
+                        'meta:rank_math_title': seo_title[:60],
+                        'meta:rank_math_description': seo_description[:160],
+                        'meta:rank_math_focus_keyword': seo_keyword,
                     }
                     writer.writerow(row)
-            
-            self.log(f"✓ CSV creat cu succes: {csv_path}", "SUCCESS")
+
+            self.log(f"✓ CSV WebGSM creat cu succes: {csv_path}", "SUCCESS")
             self.log(f"   📊 Total produse exportate: {len(products_data)}", "INFO")
+            self.log(f"   📋 Coloane CSV: {len(fieldnames)} (atribute + ACF + SEO)", "INFO")
             return str(csv_path)
-            
+
         except Exception as e:
             self.log(f"✗ Eroare creare CSV: {e}", "ERROR")
             import traceback
@@ -1489,23 +1960,54 @@ class ImportProduse:
             tags = sorted(set(tags))  # Apoi sortează alfabetic și elimină orice duplicat rămas
             
             category_path = self.detect_category(product_name, tags)
-            
+
+            # ===== WEBGSM: Extrage atribute, categorie slug, coduri, features =====
+            attributes = self.extract_product_attributes(product_name, description)
+            category_slug = self.get_webgsm_category(product_name)
+            compat_codes = self.extract_compatibility_codes(description)
+            screen_features = self.detect_screen_features(product_name, description)
+
+            self.log(f"   📋 Atribute WebGSM:", "INFO")
+            self.log(f"      Model: {attributes['pa_model']}", "INFO")
+            self.log(f"      Calitate: {attributes['pa_calitate']}", "INFO")
+            self.log(f"      Brand piesa: {attributes['pa_brand_piesa']}", "INFO")
+            self.log(f"      Tehnologie: {attributes['pa_tehnologie']}", "INFO")
+            self.log(f"      Categorie slug: {category_slug}", "INFO")
+            if compat_codes:
+                self.log(f"      Coduri compatibilitate: {compat_codes}", "INFO")
+            if screen_features['ic_movable'] == 'true':
+                self.log(f"      IC Movable: DA", "INFO")
+            if screen_features['truetone_support'] == 'true':
+                self.log(f"      TrueTone: DA", "INFO")
+
             product_data = {
-                'ean': ean if not ean.startswith('http') else product_link,  # Pentru logging
-                'ean_real': '',  # MobileSentrix NU expune EAN public
-                'sku': generated_sku,  # SKU generat din ID intern
+                'ean': ean if not ean.startswith('http') else product_link,
+                'ean_real': '',
+                'sku': generated_sku,
                 'name': product_name,
                 'price': price,
                 'description': description,
-                'stock': '100',  # Stock default
+                'stock': '100',
                 'brand': brand,
                 'tags': ', '.join(tags),
                 'category_path': category_path,
-                'images': images_data
+                'images': images_data,
+                # WebGSM fields
+                'pa_model': attributes['pa_model'],
+                'pa_calitate': attributes['pa_calitate'],
+                'pa_brand_piesa': attributes['pa_brand_piesa'],
+                'pa_tehnologie': attributes['pa_tehnologie'],
+                'category_slug': category_slug,
+                'coduri_compatibilitate': compat_codes,
+                'ic_movable': screen_features['ic_movable'],
+                'truetone_support': screen_features['truetone_support'],
+                'furnizor_activ': 'mobilesentrix',
+                'pret_achizitie_eur': price,
+                'locatie_stoc': 'depozit_central',
             }
-            
-            self.log(f"   ✓ Date extrase cu succes!", "SUCCESS")
-            
+
+            self.log(f"   ✓ Date extrase cu succes! (format WebGSM)", "SUCCESS")
+
             return product_data
             
         except requests.exceptions.RequestException as req_error:
