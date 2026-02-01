@@ -442,7 +442,53 @@ class ImportProduse:
         except Exception as e:
             self.log(f"✗ Eroare reîncarcare config: {e}", "ERROR")
             messagebox.showerror("Eroare", f"Nu s-a putut reîncărca configurația:\n{e}")
-    
+
+    def calculate_selling_price(self, price_eur, exchange_rate=5.0, markup=0.40, vat=0.19):
+        """
+        Calculează prețul de vânzare B2C cu TVA.
+
+        Args:
+            price_eur: Preț achiziție în EUR (fără TVA)
+            exchange_rate: Curs EUR/RON (default 5.0)
+            markup: Adaos comercial (default 40% = 0.40)
+            vat: TVA (default 19% = 0.19)
+
+        Returns:
+            Preț de vânzare în RON cu TVA inclus
+        """
+        price_ron = price_eur * exchange_rate
+        price_with_markup = price_ron * (1 + markup)
+        final_price = price_with_markup * (1 + vat)
+        return round(final_price, 2)
+
+    def detect_availability(self, soup, page_text):
+        """
+        Detectează dacă produsul e în stoc, preorder sau out of stock.
+
+        Returns:
+            'in_stock' | 'preorder' | 'out_of_stock'
+        """
+        text_lower = (page_text or '').lower()
+        if hasattr(soup, 'get_text'):
+            text_lower = (soup.get_text() + ' ' + text_lower).lower()
+
+        preorder_indicators = [
+            'pre-order', 'preorder', 'pre order', 'coming soon',
+            'available for pre-order', 'expected to ship', 'estimated arrival', 'backorder'
+        ]
+        for indicator in preorder_indicators:
+            if indicator in text_lower:
+                return 'preorder'
+
+        oos_indicators = [
+            'out of stock', 'sold out', 'currently unavailable', 'not available'
+        ]
+        for indicator in oos_indicators:
+            if indicator in text_lower:
+                return 'out_of_stock'
+
+        return 'in_stock'
+
     def generate_unique_sku(self, ean):
         """LEGACY - păstrat pentru compatibilitate. Folosește generate_webgsm_sku() pentru SKU-uri noi."""
         ean_int = int(ean) if ean.isdigit() else int(''.join(c for c in ean if c.isdigit()))
@@ -1417,12 +1463,15 @@ class ImportProduse:
                         image_urls.sort(key=lambda x: x[0])
                         image_urls = [url for _, url in image_urls]
 
-                    # Calculează preț RON (păstrează EUR original)
+                    # Calculează preț vânzare RON: achiziție EUR → RON → adaos 40% → TVA 19%
                     price_eur = product['price']
-                    price_ron = price_eur
                     if self.convert_price_var.get():
                         exchange_rate = float(self.exchange_rate_var.get())
-                        price_ron = price_eur * exchange_rate
+                        price_ron = self.calculate_selling_price(
+                            price_eur, exchange_rate=exchange_rate, markup=0.40, vat=0.19
+                        )
+                    else:
+                        price_ron = price_eur
 
                     # Curăță numele (elimină " Copy" de la sfârșit)
                     clean_name = product.get('name', 'N/A')
@@ -1506,6 +1555,18 @@ class ImportProduse:
                     warranty_months = warranty_months.group(1) if warranty_months else '12'
                     self.log(f"   ⏱️ Garantie: {warranty_months} luni", "INFO")
 
+                    # Disponibilitate și stoc (din scrape: in_stock / preorder / out_of_stock)
+                    availability = product.get('availability', 'in_stock')
+                    if availability == 'in_stock':
+                        in_stock = '1'
+                        locatie_stoc = product.get('locatie_stoc', 'depozit_central')
+                    elif availability == 'preorder':
+                        in_stock = '0'
+                        locatie_stoc = 'precomanda'
+                    else:
+                        in_stock = '0'
+                        locatie_stoc = 'indisponibil'
+
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
 
@@ -1534,7 +1595,7 @@ class ImportProduse:
                         'Description': clean_desc_ro,
                         'Tax status': 'taxable',
                         'Tax class': '',
-                        'In stock?': '1',
+                        'In stock?': in_stock,
                         'Stock': product.get('stock', '100'),
                         'Regular price': f"{price_ron:.2f}",
                         'Categories': categories,
@@ -1566,7 +1627,7 @@ class ImportProduse:
                         'meta:sku_furnizor': sku_furnizor,
                         'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
                         'meta:pret_achizitie': f"{price_eur:.2f}",
-                        'meta:locatie_stoc': product.get('locatie_stoc', 'depozit_central'),
+                        'meta:locatie_stoc': locatie_stoc,
                         'meta:garantie_luni': warranty_months,
                         'meta:coduri_compatibilitate': product.get('coduri_compatibilitate', ''),
                         'meta:ic_movable': product.get('ic_movable', 'false'),
@@ -2249,6 +2310,17 @@ class ImportProduse:
             
             category_path = self.detect_category(product_name, tags)
 
+            # ===== Disponibilitate: in_stock / preorder / out_of_stock =====
+            page_text = product_soup.get_text()
+            availability = self.detect_availability(product_soup, page_text)
+            if availability == 'in_stock':
+                locatie_stoc = 'depozit_central'
+            elif availability == 'preorder':
+                locatie_stoc = 'precomanda'
+            else:
+                locatie_stoc = 'indisponibil'
+            self.log(f"   📦 Disponibilitate: {availability} → locatie_stoc: {locatie_stoc}", "INFO")
+
             # ===== WEBGSM: Extrage atribute, categorie slug, coduri, features =====
             attributes = self.extract_product_attributes(product_name, description, product_link or '')
             category_slug = self.get_webgsm_category(product_name)
@@ -2292,7 +2364,8 @@ class ImportProduse:
                 'truetone_support': screen_features['truetone_support'],
                 'furnizor_activ': 'mobilesentrix',
                 'pret_achizitie_eur': price,
-                'locatie_stoc': 'depozit_central',
+                'availability': availability,
+                'locatie_stoc': locatie_stoc,
             }
 
             self.log(f"   ✓ Date extrase cu succes! (format WebGSM)", "SUCCESS")
