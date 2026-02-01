@@ -864,8 +864,14 @@ class ImportProduse:
     def detect_screen_features(self, product_name, description=''):
         """
         Detectează caracteristici ecran: IC Movable, TrueTone support.
+        Doar pentru produse ecran (LCD, OLED, display, screen). La restul nu populăm aceste câmpuri.
         """
         text = f"{product_name} {description}".lower()
+        is_screen = any(x in text for x in [
+            'display', 'screen', 'oled', 'lcd', 'ecran', 'assembly', 'digitizer', 'amoled'
+        ])
+        if not is_screen:
+            return {'ic_movable': 'false', 'truetone_support': 'false'}
 
         ic_movable = 'true' if any(x in text for x in [
             'with ic', 'ic installed', 'ic included', 'movable ic',
@@ -1506,6 +1512,10 @@ class ImportProduse:
 
                     # Calculează preț vânzare RON: achiziție EUR → RON → adaos 40% → TVA 19%
                     price_eur = product['price']
+                    # Preț achiziție în LEI cu TVA: EUR × 5.1 (curs) × 1.21 (TVA achiziție 21%)
+                    curs_achizitie = 5.1
+                    tva_achizitie = 1.21
+                    pret_achizitie_lei_cu_tva = round(price_eur * curs_achizitie * tva_achizitie, 2)
                     if self.convert_price_var.get():
                         exchange_rate = float(self.exchange_rate_var.get())
                         price_ron = self.calculate_selling_price(
@@ -1654,6 +1664,11 @@ class ImportProduse:
 
                     self.log(f"   🔍 SEO: {seo_title[:60]}...", "INFO")
 
+                    # True Tone și IC transferabil doar pentru ecrane (LCD/OLED). La restul nu populăm.
+                    is_screen_product = (tip_ro == 'Ecran' or bool(pa_tehnologie))
+                    ic_movable_val = product.get('ic_movable', 'false') if is_screen_product else 'false'
+                    truetone_val = product.get('truetone_support', 'false') if is_screen_product else 'false'
+
                     row = {
                         'ID': '',
                         'Type': 'simple',
@@ -1697,12 +1712,12 @@ class ImportProduse:
                         'meta:gtin_ean': ean_value,
                         'meta:sku_furnizor': sku_furnizor,
                         'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
-                        'meta:pret_achizitie': f"{price_eur:.2f}",
+                        'meta:pret_achizitie': f"{pret_achizitie_lei_cu_tva:.2f}",
                         'meta:locatie_stoc': locatie_stoc,
                         'meta:garantie_luni': warranty_months,
                         'meta:coduri_compatibilitate': product.get('coduri_compatibilitate', ''),
-                        'meta:ic_movable': product.get('ic_movable', 'false'),
-                        'meta:truetone_support': product.get('truetone_support', 'false'),
+                        'meta:ic_movable': ic_movable_val,
+                        'meta:truetone_support': truetone_val,
                         # SEO RANK MATH
                         'meta:rank_math_title': seo_title[:60],
                         'meta:rank_math_description': seo_description[:160],
