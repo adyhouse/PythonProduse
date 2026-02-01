@@ -1067,81 +1067,82 @@ class ImportProduse:
         # Default pentru alte categorii
         return "12 luni"
     
-    def build_longtail_title(self, product_name, description=""):
-        """Construiește titlu Long Tail SEO optimizat: [Piesa] [Model] [Calitate] [Culoare]"""
-        # Extrage componentele titlului
+    def build_longtail_title(self, translated_name, description="", attributes=None):
+        """
+        Construiește titlu Long Tail SEO optimizat.
+
+        STRATEGIE: Folosește numele tradus (RO) ca bază principală,
+        îmbogățit cu atributele deja extrase de extract_product_attributes().
+
+        Format: "{Tip} {Model} {Tehnologie} {Brand} {Culoare} - {Calitate}"
+        Exemplu: "Ecran iPhone 13 OLED JK Negru - Premium OEM"
+
+        Args:
+            translated_name: Numele produsului tradus în română
+            description: Descrierea produsului (EN sau RO)
+            attributes: Dict cu pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie
+                       (din extract_product_attributes, disponibil ca product dict keys)
+        """
         import re
-        
-        # 1. NUME PIESA - cauta în titlu
-        piece_names = {
-            'display': ['display', 'lcd', 'ecran', 'screen', 'amoled', 'oled'],
-            'baterie': ['baterie', 'battery', 'acumulator', 'baterija'],
-            'carcasa': ['carcasa', 'casing', 'housing', 'case', 'back'],
-            'cablu': ['cablu', 'cable', 'flex', 'ribbon'],
-            'incarcator': ['incarcator', 'charger', 'power'],
-            'difuzor': ['difuzor', 'speaker', 'audio'],
-            'buton': ['buton', 'button', 'key'],
-            'folie': ['folie', 'folie', 'protektor', 'tempered'],
-        }
-        
-        piece_name = 'Piesa'
-        text_lower = f"{product_name} {description}".lower()
-        for piece, keywords in piece_names.items():
-            if any(kw in text_lower for kw in keywords):
-                piece_name = piece.capitalize()
-                break
-        
-        # 2. MODEL TELEFON - extrage din titlu
-        phone_models = [
-            'iPhone 17', 'iPhone 16', 'iPhone 15', 'iPhone 14', 'iPhone 13', 'iPhone 12', 'iPhone 11',
-            'Samsung Galaxy S24', 'Samsung Galaxy S23', 'Samsung Galaxy S22', 'Samsung Galaxy S21', 'Samsung Galaxy A54',
-            'Google Pixel 8', 'Google Pixel 7', 'Google Pixel 6',
-            'OnePlus 12', 'OnePlus 11',
-            'Xiaomi 14', 'Xiaomi 13',
-            'Huawei P60', 'Huawei P50'
-        ]
-        
-        phone_model = 'Telefon'
-        for model in phone_models:
-            if model.lower() in text_lower:
-                phone_model = model
-                break
-        
-        # 3. CALITATE - extrage din titlu
-        quality_map = {
-            'original': ['original', 'oem', 'genuin'],
-            'premium': ['premium', 'high quality', 'de calitate'],
-            'compatible': ['compatible', 'compatibil', 'aftermarket'],
-            'standard': []
-        }
-        
-        quality = 'Standard'
-        for qual, keywords in quality_map.items():
-            if keywords and any(kw in text_lower for kw in keywords):
-                quality = qual.capitalize()
-                break
-        
-        # 4. CULOARE - cauta în titlu
+
+        if not attributes:
+            attributes = {}
+
+        # Folosește atributele deja extrase (sunt corecte, testate)
+        pa_model = attributes.get('pa_model', '')
+        pa_calitate = attributes.get('pa_calitate', '')
+        pa_brand_piesa = attributes.get('pa_brand_piesa', '')
+        pa_tehnologie = attributes.get('pa_tehnologie', '')
+
+        # 1. TIP PRODUS (RO) - din titlul original EN, deja testat în _detect_tip_produs_ro
+        original_name = attributes.get('original_name', translated_name)
+        tip_ro = self._detect_tip_produs_ro(original_name)
+
+        # 2. CULOARE - detectare cu word boundaries (previne false positives)
         color_map = {
-            'Negru': ['negru', 'black', 'noir'],
-            'Alb': ['alb', 'white', 'blanc'],
-            'Gri': ['gri', 'gray', 'grey'],
-            'Argintiu': ['argintiu', 'silver', 'argent'],
-            'Auriu': ['auriu', 'gold', 'or'],
-            'Albastru': ['albastru', 'blue', 'bleu'],
-            'Rosu': ['rosu', 'red', 'rouge'],
-            'Verde': ['verde', 'green', 'vert'],
-            'Roz': ['roz', 'pink', 'rose'],
+            'Negru': [r'\bnegru\b', r'\bblack\b', r'\bnoir\b'],
+            'Alb': [r'\balb\b', r'\bwhite\b', r'\bblanc\b'],
+            'Gri': [r'\bgri\b', r'\bgray\b', r'\bgrey\b'],
+            'Argintiu': [r'\bargintiu\b', r'\bsilver\b', r'\bargent\b'],
+            'Auriu': [r'\bauriu\b', r'\bgold\b', r'\bgolden\b'],
+            'Albastru': [r'\balbastru\b', r'\bblue\b', r'\bbleu\b'],
+            'Roșu': [r'\brosu\b', r'\broșu\b', r'\bred\b', r'\brouge\b'],
+            'Verde': [r'\bverde\b', r'\bgreen\b', r'\bvert\b'],
+            'Roz': [r'\broz\b', r'\bpink\b', r'\brose\b'],
+            'Violet': [r'\bviolet\b', r'\bpurple\b', r'\bdeep purple\b'],
+            'Portocaliu': [r'\bportocaliu\b', r'\borange\b'],
+            'Coral': [r'\bcoral\b'],
+            'Miezul Nopții': [r'\bmidnight\b'],
+            'Stelar': [r'\bstarlight\b'],
         }
-        
-        color = 'Standard'
-        for col, keywords in color_map.items():
-            if any(kw in text_lower for kw in keywords):
+
+        text_lower = f"{translated_name} {description}".lower()
+        color = ''
+        for col, patterns in color_map.items():
+            if any(re.search(p, text_lower) for p in patterns):
                 color = col
                 break
-        
-        # Construiește titlu Long Tail
-        longtail = f"{piece_name} {phone_model} {quality} {color}"
+
+        # 3. Construiește titlul: Tip + Model + Tehnologie + Brand + Culoare - Calitate
+        parts = [tip_ro]
+
+        if pa_model:
+            parts.append(pa_model)
+
+        if pa_tehnologie:
+            parts.append(pa_tehnologie)
+
+        if pa_brand_piesa:
+            parts.append(pa_brand_piesa)
+
+        if color:
+            parts.append(color)
+
+        longtail = ' '.join(parts)
+
+        # Adaugă calitatea ca sufix dacă nu e default
+        if pa_calitate and pa_calitate not in ('Aftermarket', ''):
+            longtail += f" - {pa_calitate}"
 
         # Corectează diacriticele (sedilă → virgulă)
         longtail = self.fix_romanian_diacritics(longtail)
@@ -1298,9 +1299,22 @@ class ImportProduse:
                     clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
                     self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
 
+                    # Atribute din produs (pre-extrase în scrape_product)
+                    pa_model = product.get('pa_model', '')
+                    pa_calitate = product.get('pa_calitate', 'Aftermarket')
+                    pa_brand_piesa = product.get('pa_brand_piesa', '')
+                    pa_tehnologie = product.get('pa_tehnologie', '')
+
                     # Construiește titlu Long Tail SEO optimizat
                     description_for_longtail = product.get('description', '')
-                    longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail)
+                    longtail_attrs = {
+                        'pa_model': pa_model,
+                        'pa_calitate': pa_calitate,
+                        'pa_brand_piesa': pa_brand_piesa,
+                        'pa_tehnologie': pa_tehnologie,
+                        'original_name': clean_name,  # titlul EN original pentru detectare tip
+                    }
+                    longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail, longtail_attrs)
                     self.log(f"   📝 Titlu Long Tail: {longtail_title}", "INFO")
 
                     # Curăță descrierea (elimină URL-uri)
@@ -1326,12 +1340,6 @@ class ImportProduse:
 
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
-
-                    # Atribute din produs (pre-extrase în scrape_product)
-                    pa_model = product.get('pa_model', '')
-                    pa_calitate = product.get('pa_calitate', 'Aftermarket')
-                    pa_brand_piesa = product.get('pa_brand_piesa', '')
-                    pa_tehnologie = product.get('pa_tehnologie', '')
 
                     # Categorii: folosește slug WebGSM
                     category_slug = product.get('category_slug', '')
