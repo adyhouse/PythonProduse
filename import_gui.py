@@ -496,18 +496,16 @@ class ImportProduse:
         sku = f"890{sequential_id:05d}00000"
         return sku
 
-    def generate_webgsm_sku(self, product_name, brand_piesa, counter):
+    def generate_webgsm_sku(self, product_name, brand_piesa, counter, calitate=None):
         """
-        Generează SKU unic format: WG-{TIP}-{MODEL}-{BRAND}-{NR}
-        Exemple: WG-ECR-IP13-JK-01, WG-BAT-S24U-SO-02, WG-CRC-IP14P-XX-01
-
-        Formatul include TIPUL PIESEI pentru a diferenția produse diferite
-        pentru același model (ecran vs baterie vs carcasă etc.)
+        Generează SKU unic format: WG-{TIP}-{MODEL}-{BRAND}-{ID}
+        Exemple: WG-BAT-IP17-PULL-01, WG-CP-IP17-OEM-01, WG-ECR-IP13-JK-01
         """
-        # CODURI TIP PIESA (3 litere) - ORDINEA CONTEAZĂ (cele mai specifice primele)
+        # CODURI TIP PIESA - ORDINEA CONTEAZĂ (cele mai specifice primele)
         type_map = {
             'ECR': ['display', 'screen', 'oled', 'lcd', 'digitizer', 'ecran'],
             'BAT': ['battery', 'baterie', 'acumulator'],
+            'CP': ['charging port'],  # Conector Încărcare
             'CAM': ['camera', 'lens'],
             'CRC': ['housing', 'back glass', 'frame', 'back cover', 'rear glass', 'carcasa'],
             'DIF': ['speaker', 'earpiece', 'buzzer', 'difuzor'],
@@ -517,7 +515,7 @@ class ImportProduse:
             'SIM': ['sim tray', 'sim card'],
             'ANT': ['antenna', 'wifi', 'gps'],
             'FOL': ['folie', 'tempered', 'screen protector'],
-            'FLX': ['flex', 'cable', 'connector', 'charging port', 'dock'],
+            'FLX': ['flex', 'cable', 'connector', 'dock'],
         }
 
         name_lower = product_name.lower()
@@ -605,7 +603,17 @@ class ImportProduse:
                 model_code = code
                 break
 
-        brand_code = brand_piesa.upper()[:2] if brand_piesa else 'XX'
+        # BRAND code: PULL (Original din Dezmembrări), OEM (Premium OEM), sau JK/GX/ZY/RJ etc.
+        if calitate == 'Original din Dezmembrări':
+            brand_code = 'PULL'
+        elif brand_piesa == 'Premium OEM':
+            brand_code = 'OEM'
+        elif brand_piesa:
+            brand_code = brand_piesa.upper().replace(' ', '')[:4]  # JK, GX, ZY, AppleOriginal -> APPL
+            if len(brand_code) < 2:
+                brand_code = brand_code.ljust(2, 'X')
+        else:
+            brand_code = 'XX'
 
         return f"WG-{type_code}-{model_code}-{brand_code}-{counter:02d}"
 
@@ -690,11 +698,13 @@ class ImportProduse:
                     model = value
                     break
 
-        # CALITATE (ordinea contează - cele mai specifice primele)
+        # CALITATE (Logică WebGSM: Genuine OEM -> Service Pack, Used OEM Pull -> Original din Dezmembrări)
         calitate = 'Aftermarket'
-        if 'service pack' in text or ('original' in text and 'genuine' in text):
+        if 'used oem pull' in text or 'oem pull' in text:
+            calitate = 'Original din Dezmembrări'
+        elif 'service pack' in text or ('original' in text and 'genuine' in text):
             calitate = 'Service Pack'
-        elif 'genuine' in text:
+        elif 'genuine oem' in text or 'genuine' in text:
             calitate = 'Service Pack'
         elif 'aftermarket plus' in text:
             calitate = 'Aftermarket Plus'
@@ -728,7 +738,9 @@ class ImportProduse:
                 brand_piesa = 'Apple Original'
             elif 'samsung' in text and ('original' in text or 'genuine' in text or 'service pack' in text):
                 brand_piesa = 'Samsung Original'
-        # NU pune "Aftermarket Plus" în brand_piesa - e CALITATE, nu brand. Brand = JK, GX, ZY, etc.
+            elif 'oem' in text or calitate in ('Premium OEM', 'Service Pack'):
+                brand_piesa = 'Premium OEM'
+        # NU pune "Aftermarket Plus" în brand_piesa - e CALITATE, nu brand. Brand = JK, GX, ZY, RJ sau Premium OEM.
 
         # TEHNOLOGIE (doar pentru ecrane)
         tehnologie = ''
@@ -854,15 +866,22 @@ class ImportProduse:
         }
 
     def _detect_tip_produs_ro(self, product_name):
-        """Detectează tipul produsului în română din titlul EN."""
+        """
+        Detectează tipul produsului în română din titlul EN.
+        Mapări WebGSM: Charging Port -> Conector Încărcare, Battery -> Baterie, Back Camera -> Cameră Spate.
+        """
         text = product_name.lower()
-        if any(x in text for x in ['display', 'screen', 'oled', 'lcd', 'digitizer']):
-            return 'Ecran'
+        if 'charging port' in text:
+            return 'Conector Încărcare'
         if any(x in text for x in ['battery', 'baterie', 'acumulator']):
             return 'Baterie'
+        if any(x in text for x in ['back camera', 'rear camera', 'cameră spate']):
+            return 'Cameră Spate'
+        if any(x in text for x in ['display', 'screen', 'oled', 'lcd', 'digitizer']):
+            return 'Ecran'
         if any(x in text for x in ['camera', 'cameră', 'lens']):
             return 'Cameră'
-        if any(x in text for x in ['flex', 'cable', 'connector', 'charging port', 'dock']):
+        if any(x in text for x in ['flex', 'cable', 'connector', 'dock']):
             return 'Flex'
         if any(x in text for x in ['housing', 'back glass', 'frame', 'back cover', 'rear glass']):
             return 'Carcasă'
@@ -1060,13 +1079,15 @@ class ImportProduse:
                     product_data = self.scrape_product(sku)
 
                     if product_data:
-                        # Generează WebGSM SKU (format: WG-TIP-MODEL-BRAND-NR)
+                        # Generează WebGSM SKU (format: WG-TIP-MODEL-BRAND-ID)
                         sku_counter += 1
                         brand_piesa = product_data.get('pa_brand_piesa', '')
+                        calitate = product_data.get('pa_calitate', '')
                         webgsm_sku = self.generate_webgsm_sku(
                             product_data.get('name', ''),
                             brand_piesa,
-                            sku_counter
+                            sku_counter,
+                            calitate=calitate
                         )
 
                         # Adaugă date suplimentare
@@ -1264,25 +1285,15 @@ class ImportProduse:
         elif '90hz' in combined_lower or '90 hz' in combined_lower:
             refresh_rate = '90Hz'
 
-        # 4. Construiește titlul: Tip + Model + Tehnologie + RefreshRate + Brand + Culoare - Calitate
-        # Folosește seen ca să nu adaugi aceeași valoare de 2 ori (ex: Aftermarket Plus)
+        # 4. Titlu WebGSM: [Nume Piesă] [Model] [Calitate] [Brand] [Culoare]
         parts = []
         seen = set()
-        for part in [tip_ro, pa_model, pa_tehnologie, refresh_rate, pa_brand_piesa, color]:
+        for part in [tip_ro, pa_model, pa_calitate, pa_brand_piesa, color]:
             if part and (part not in seen):
                 parts.append(part)
                 seen.add(part)
-
         longtail = ' '.join(parts)
-
-        # Adaugă calitatea ca sufix dacă nu e generic "Aftermarket" și nu e deja în titlu
-        if pa_calitate and pa_calitate not in ('Aftermarket', '') and pa_calitate not in longtail:
-            longtail += f" - {pa_calitate}"
-
-        # Corectează diacriticele (sedilă → virgulă)
-        longtail = self.fix_romanian_diacritics(longtail)
-
-        return longtail
+        return self.curata_text(longtail)
 
     def remove_diacritics(self, text):
         """DEZACTIVAT - Păstrăm diacriticele românești corecte.
@@ -1312,6 +1323,15 @@ class ImportProduse:
         text = text.replace('\u0162', '\u021a')  # Ţ → Ț
 
         return text
+
+    def curata_text(self, text):
+        """
+        Curăță text: diacritice ș/ț (sedilă → virgulă) și elimină spațiile duble.
+        """
+        if not text:
+            return text
+        text = self.fix_romanian_diacritics(text)
+        return re.sub(r'\s+', ' ', text).strip()
 
     # ⚡ Cache traduceri - evită apeluri duplicate la Google Translate
     _translation_cache = {}
@@ -1519,13 +1539,24 @@ class ImportProduse:
                         short_desc_parts.append(f"calitate {pa_calitate}")
                     short_desc_intro = ' '.join(short_desc_parts)
                     short_description = f"{short_desc_intro}. Garanție inclusă. Livrare rapidă în toată România."
-                    short_description = self.fix_romanian_diacritics(short_description)
+                    short_description = self.curata_text(short_description)
                     if len(short_description) > 160:
                         short_description = short_description[:157] + "..."
 
-                    # Înlocuiește "Produs" generic în descriere cu tipul real (Ecran, Baterie, etc.)
-                    clean_desc_ro = clean_desc_ro.replace('Produs ', tip_ro + ' ').replace('produs ', tip_ro.lower() + ' ')
-                    clean_desc_ro = clean_desc_ro.replace('Produs.', tip_ro + '.').replace('produs.', tip_ro.lower() + '.')
+                    # Fișă tehnică: descriere = tabel HTML (Calitate, Model Compatibil, Garanție 24 luni, Tip Produs)
+                    fisa_tehnica_html = (
+                        '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
+                        '<tr><td><strong>Calitate</strong></td><td>{}</td></tr>'
+                        '<tr><td><strong>Model Compatibil</strong></td><td>{}</td></tr>'
+                        '<tr><td><strong>Garanție</strong></td><td>24 luni</td></tr>'
+                        '<tr><td><strong>Tip Produs</strong></td><td>{}</td></tr>'
+                        '</table>'
+                    ).format(
+                        self.curata_text(pa_calitate or '-'),
+                        self.curata_text(pa_model or '-'),
+                        self.curata_text(tip_ro or '-')
+                    )
+                    clean_desc_ro = fisa_tehnica_html
 
                     # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
