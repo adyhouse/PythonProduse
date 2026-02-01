@@ -698,6 +698,21 @@ class ImportProduse:
                     model = value
                     break
 
+        # Fallback obligatoriu iPhone: dacă titlul conține "iPhone" + cifre/termeni, extrage modelul
+        if not model and 'iphone' in text:
+            iphone_match = re.search(
+                r'iphone\s+(\d+\s*(?:pro\s*max|pro|plus|mini|air)?|\d+)',
+                f"{product_name} {description}", re.I
+            )
+            if iphone_match:
+                model_raw = iphone_match.group(0).strip()  # "iPhone 17" sau "iPhone 14 Pro Max"
+                for pattern, value in model_patterns:
+                    if pattern in model_raw.lower():
+                        model = value
+                        break
+                if not model:
+                    model = model_raw.title()
+
         # CALITATE (Logică WebGSM: Genuine OEM -> Service Pack, Used OEM Pull -> Original din Dezmembrări)
         calitate = 'Aftermarket'
         if 'used oem pull' in text or 'oem pull' in text:
@@ -715,14 +730,16 @@ class ImportProduse:
         elif 'refurbished' in text or 'refurb' in text:
             calitate = 'Refurbished'
 
-        # BRAND PIESA (Aftermarket Plus = calitate premium, poate apărea și ca brand)
+        # BRAND PIESA - extragere din titlul original (EN): Ampsentrix, JK, ZY, GX, Hex, Genuine
         brand_piesa = ''
         brand_patterns = [
+            ('Ampsentrix', ['ampsentrix']),
             ('JK', [' jk ', ' jk-', '(jk)', 'jk incell', 'jk soft']),
-            ('GX', [' gx ', ' gx-', '(gx)', 'gx soft', 'gx hard']),
             ('ZY', [' zy ', ' zy-', '(zy)', 'zy soft']),
+            ('GX', [' gx ', ' gx-', '(gx)', 'gx soft', 'gx hard']),
+            ('Hex', [' hex ', ' hex-', '(hex)', 'hex ']),
+            ('Genuine', ['genuine']),
             ('RJ', [' rj ', ' rj-', '(rj)', 'rj incell']),
-            ('HEX', [' hex ', ' hex-', '(hex)']),
             ('Foxconn', ['foxconn']),
             ('BOE', [' boe ', '(boe)']),
             ('Tianma', ['tianma']),
@@ -742,7 +759,7 @@ class ImportProduse:
                 brand_piesa = 'Premium OEM'
         # NU pune "Aftermarket Plus" în brand_piesa - e CALITATE, nu brand. Brand = JK, GX, ZY, RJ sau Premium OEM.
 
-        # TEHNOLOGIE (doar pentru ecrane)
+        # TEHNOLOGIE - din titlul original (EN): OLED, Soft OLED, Incell, TFT
         tehnologie = ''
         if any(x in text for x in ['display', 'screen', 'lcd', 'oled', 'ecran', 'assembly']):
             if 'soft' in text and 'oled' in text:
@@ -889,7 +906,11 @@ class ImportProduse:
             return 'Difuzor'
         if any(x in text for x in ['button', 'power button', 'volume']):
             return 'Buton'
-        return 'Piesă'
+        if 'screw' in text:
+            return 'Șurub'
+        if 'seal' in text:
+            return 'Garnitură'
+        return 'Componentă'
 
     def generate_seo_title(self, product_name, model, brand_piesa, tehnologie):
         """
@@ -1543,38 +1564,50 @@ class ImportProduse:
                     if len(short_description) > 160:
                         short_description = short_description[:157] + "..."
 
-                    # Fișă tehnică: descriere = tabel HTML (Calitate, Model Compatibil, Garanție 24 luni, Tip Produs)
+                    # Fișă tehnică: tabel HTML = oglindă EXACTĂ a Attribute 1, 2, 3, 4 + Garanție + Tip
                     fisa_tehnica_html = (
                         '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
                         '<tr><td><strong>Calitate</strong></td><td>{}</td></tr>'
                         '<tr><td><strong>Model Compatibil</strong></td><td>{}</td></tr>'
+                        '<tr><td><strong>Brand Piesa</strong></td><td>{}</td></tr>'
+                        '<tr><td><strong>Tehnologie</strong></td><td>{}</td></tr>'
                         '<tr><td><strong>Garanție</strong></td><td>24 luni</td></tr>'
                         '<tr><td><strong>Tip Produs</strong></td><td>{}</td></tr>'
                         '</table>'
                     ).format(
-                        self.curata_text(pa_calitate or '-'),
-                        self.curata_text(pa_model or '-'),
-                        self.curata_text(tip_ro or '-')
+                        self.curata_text(pa_calitate) if pa_calitate else '-',
+                        self.curata_text(pa_model) if pa_model else '-',
+                        self.curata_text(pa_brand_piesa) if pa_brand_piesa else '-',
+                        self.curata_text(pa_tehnologie) if pa_tehnologie else '-',
+                        self.curata_text(tip_ro) if tip_ro else '-'
                     )
                     clean_desc_ro = fisa_tehnica_html
 
                     # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
 
-                    # EAN: cod de bare real extras - salvat ca TEXT (evită 1.07E+11 în Excel)
-                    ean_raw = product.get('ean_real', '') or product.get('sku_furnizor', '')
-                    ean_str = str(ean_raw).strip()
-                    if ean_str:
-                        if ean_str.isdigit():
-                            ean_value = ean_str  # deja text, păstrează
-                        else:
+                    # EAN/GTIN: cod numeric 12-14 cifre de la MobileSentrix (meta:gtin_ean)
+                    ean_real = str(product.get('ean_real', '')).strip()
+                    sku_furn = str(product.get('sku_furnizor', '')).strip()
+                    ean_value = ''
+                    for raw in (ean_real, sku_furn):
+                        if not raw:
+                            continue
+                        s = raw
+                        if not s.isdigit():
                             try:
-                                # Notă științifică sau float: convertește la string fără exponent
-                                ean_value = str(int(float(ean_str)))
+                                s = str(int(float(s)))
                             except (ValueError, TypeError):
-                                ean_value = ean_str
-                    else:
-                        ean_value = ''
+                                s = re.sub(r'\D', '', s)
+                        if 12 <= len(s) <= 14:
+                            ean_value = s
+                            break
+                        if 8 <= len(s) <= 14 and not ean_value:
+                            ean_value = s
+                    if not ean_value and (ean_real or sku_furn):
+                        s = re.sub(r'\D', '', ean_real or sku_furn)
+                        if s:
+                            ean_value = s
 
                     # SKU furnizor: codul MobileSentrix (ex: 107182127516)
                     sku_furnizor = product.get('sku_furnizor', product.get('sku', ''))
@@ -1597,6 +1630,13 @@ class ImportProduse:
                     else:
                         in_stock = '0'
                         locatie_stoc = 'indisponibil'
+                    # Reparare stoc: dacă Stock > 0, In stock? = 1 (permite vânzarea)
+                    try:
+                        stock_val = product.get('stock', '100')
+                        if int(stock_val) > 0:
+                            in_stock = '1'
+                    except (ValueError, TypeError):
+                        pass
 
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
