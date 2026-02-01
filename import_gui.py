@@ -452,9 +452,38 @@ class ImportProduse:
 
     def generate_webgsm_sku(self, product_name, brand_piesa, counter):
         """
-        Generează SKU format: WG-{MODEL}-{BRAND}-{NR}
-        Exemple: WG-IP13-JK-01, WG-IP14PM-GX-02, WG-S24U-ZY-01
+        Generează SKU unic format: WG-{TIP}-{MODEL}-{BRAND}-{NR}
+        Exemple: WG-ECR-IP13-JK-01, WG-BAT-S24U-SO-02, WG-CRC-IP14P-XX-01
+
+        Formatul include TIPUL PIESEI pentru a diferenția produse diferite
+        pentru același model (ecran vs baterie vs carcasă etc.)
         """
+        # CODURI TIP PIESA (3 litere) - ORDINEA CONTEAZĂ (cele mai specifice primele)
+        type_map = {
+            'ECR': ['display', 'screen', 'oled', 'lcd', 'digitizer', 'ecran'],
+            'BAT': ['battery', 'baterie', 'acumulator'],
+            'CAM': ['camera', 'lens'],
+            'CRC': ['housing', 'back glass', 'frame', 'back cover', 'rear glass', 'carcasa'],
+            'DIF': ['speaker', 'earpiece', 'buzzer', 'difuzor'],
+            'BTN': ['button', 'power button', 'volume', 'buton'],
+            'SNZ': ['sensor', 'proximity', 'face id'],
+            'TAP': ['taptic', 'vibrator', 'motor'],
+            'SIM': ['sim tray', 'sim card'],
+            'ANT': ['antenna', 'wifi', 'gps'],
+            'FOL': ['folie', 'tempered', 'screen protector'],
+            'FLX': ['flex', 'cable', 'connector', 'charging port', 'dock'],
+        }
+
+        name_lower = product_name.lower()
+
+        # Detectează tipul piesei
+        type_code = 'PIS'  # default = Piesă
+        for code, keywords in type_map.items():
+            if any(kw in name_lower for kw in keywords):
+                type_code = code
+                break
+
+        # CODURI MODEL TELEFON
         model_map = {
             'iphone 16 pro max': 'IP16PM',
             'iphone 16 pro': 'IP16P',
@@ -519,7 +548,6 @@ class ImportProduse:
             'pixel 7': 'PX7',
         }
 
-        name_lower = product_name.lower()
         model_code = 'UNK'
         for model, code in model_map.items():
             if model in name_lower:
@@ -528,7 +556,7 @@ class ImportProduse:
 
         brand_code = brand_piesa.upper()[:2] if brand_piesa else 'XX'
 
-        return f"WG-{model_code}-{brand_code}-{counter:02d}"
+        return f"WG-{type_code}-{model_code}-{brand_code}-{counter:02d}"
 
     def extract_product_attributes(self, product_name, description=''):
         """
@@ -924,10 +952,7 @@ class ImportProduse:
                     product_data = self.scrape_product(sku)
 
                     if product_data:
-                        # Salvează SKU-ul furnizor
-                        supplier_sku = product_data.get('sku', '')
-
-                        # Generează WebGSM SKU
+                        # Generează WebGSM SKU (format: WG-TIP-MODEL-BRAND-NR)
                         sku_counter += 1
                         brand_piesa = product_data.get('pa_brand_piesa', '')
                         webgsm_sku = self.generate_webgsm_sku(
@@ -938,8 +963,8 @@ class ImportProduse:
 
                         # Adaugă date suplimentare
                         product_data['webgsm_sku'] = webgsm_sku
-                        product_data['supplier_sku'] = supplier_sku
-                        product_data['ean'] = sku
+                        # sku_furnizor e deja setat corect în scrape_product()
+                        # ean_real e deja setat corect în scrape_product()
 
                         success_count += 1
                         self.log(f"✓ Produs procesat! SKU: {webgsm_sku}", "SUCCESS")
@@ -1325,11 +1350,14 @@ class ImportProduse:
                     clean_desc_ro = self.translate_text(clean_desc, source='en', target='ro')
                     self.log(f"   🌍 Descriere tradusă: {len(clean_desc)} → {len(clean_desc_ro)} caractere", "INFO")
 
-                    # SKU: folosește WebGSM SKU
+                    # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
 
-                    # EAN: folosește supplier_sku (SKU furnizor 107182127516)
-                    ean_value = product.get('supplier_sku', '') or product.get('sku', '')
+                    # EAN: cod de bare real extras de pe pagina furnizorului
+                    ean_value = product.get('ean_real', '')
+
+                    # SKU furnizor: codul MobileSentrix (ex: 107182127516)
+                    sku_furnizor = product.get('sku_furnizor', product.get('sku', ''))
 
                     # Detectează garanția (număr luni)
                     warranty_text = self.detect_warranty(clean_name_ro, product.get('category_path', ''))
@@ -1395,7 +1423,7 @@ class ImportProduse:
                         'Attribute 4 global': '1',
                         # ACF META
                         'meta:gtin_ean': ean_value,
-                        'meta:sku_furnizor': product.get('supplier_sku', ''),
+                        'meta:sku_furnizor': sku_furnizor,
                         'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
                         'meta:pret_achizitie': f"{price_eur:.2f}",
                         'meta:locatie_stoc': product.get('locatie_stoc', 'depozit_central'),
@@ -1821,12 +1849,92 @@ class ImportProduse:
                 # Pattern: var ecommerce = {...,"item_id":"107182127516",...}
                 ecommerce_pattern = r'var ecommerce\s*=\s*{[^}]*"item_id"\s*:\s*"(\d+)"'
                 ecommerce_match = re.search(ecommerce_pattern, product_page_html)
-                
+
                 if ecommerce_match:
                     extracted_sku = ecommerce_match.group(1)
                     self.log(f"   ✓ SKU MobileSentrix extras din JavaScript: {extracted_sku}", "SUCCESS")
             except Exception as sku_extract_error:
                 self.log(f"   ⚠️ Nu am putut extrage SKU din JavaScript: {sku_extract_error}", "WARNING")
+
+            # 🔢 EXTRAGE EAN REAL (COD DE BARE 8-14 CIFRE) DE PE PAGINA MOBILESENTRIX
+            extracted_ean = ''
+            try:
+                import re, json
+
+                # 1. JSON-LD structured data: "gtin13", "gtin", "gtin14", "ean"
+                json_ld_scripts = product_soup.find_all('script', type='application/ld+json')
+                for script in json_ld_scripts:
+                    try:
+                        data = json.loads(script.string)
+                        if isinstance(data, dict):
+                            for ean_key in ['gtin13', 'gtin', 'gtin14', 'gtin12', 'gtin8', 'ean', 'mpn']:
+                                val = data.get(ean_key, '')
+                                if val and re.match(r'^\d{8,14}$', str(val)):
+                                    extracted_ean = str(val)
+                                    self.log(f"   ✓ EAN extras din JSON-LD ({ean_key}): {extracted_ean}", "SUCCESS")
+                                    break
+                            # Caută și în offers
+                            if not extracted_ean and 'offers' in data:
+                                offers = data['offers']
+                                if isinstance(offers, dict):
+                                    offers = [offers]
+                                if isinstance(offers, list):
+                                    for offer in offers:
+                                        for ean_key in ['gtin13', 'gtin', 'sku']:
+                                            val = offer.get(ean_key, '')
+                                            if val and re.match(r'^\d{8,14}$', str(val)):
+                                                extracted_ean = str(val)
+                                                self.log(f"   ✓ EAN extras din JSON-LD offers ({ean_key}): {extracted_ean}", "SUCCESS")
+                                                break
+                                        if extracted_ean:
+                                            break
+                        if extracted_ean:
+                            break
+                    except:
+                        pass
+
+                # 2. HTML: meta itemprop="gtin13", "gtin", "ean"
+                if not extracted_ean:
+                    for prop in ['gtin13', 'gtin', 'gtin14', 'gtin8', 'ean', 'mpn']:
+                        meta_elem = product_soup.find(attrs={'itemprop': prop})
+                        if meta_elem:
+                            val = meta_elem.get('content', '') or meta_elem.get_text(strip=True)
+                            if val and re.match(r'^\d{8,14}$', str(val)):
+                                extracted_ean = str(val)
+                                self.log(f"   ✓ EAN extras din HTML itemprop ({prop}): {extracted_ean}", "SUCCESS")
+                                break
+
+                # 3. HTML: text vizibil pe pagină "EAN:", "Barcode:", "UPC:"
+                if not extracted_ean:
+                    page_text = product_soup.get_text()
+                    ean_text_match = re.search(
+                        r'(?:EAN|Barcode|UPC|GTIN|ISBN)[\s:]*(\d{8,14})',
+                        page_text, re.IGNORECASE
+                    )
+                    if ean_text_match:
+                        extracted_ean = ean_text_match.group(1)
+                        self.log(f"   ✓ EAN extras din text pagină: {extracted_ean}", "SUCCESS")
+
+                # 4. JavaScript: "ean":"0195949043505" sau barcode/gtin
+                if not extracted_ean:
+                    js_ean_match = re.search(
+                        r'["\'](?:ean|barcode|gtin|gtin13|upc)["\'][\s:]*["\'](\d{8,14})["\']',
+                        product_page_html, re.IGNORECASE
+                    )
+                    if js_ean_match:
+                        extracted_ean = js_ean_match.group(1)
+                        self.log(f"   ✓ EAN extras din JavaScript: {extracted_ean}", "SUCCESS")
+
+                # 5. Fallback: dacă input-ul original e EAN (8-14 cifre), folosim asta
+                if not extracted_ean and re.match(r'^\d{8,14}$', ean.strip()):
+                    extracted_ean = ean.strip()
+                    self.log(f"   ℹ️ EAN: folosit input-ul original ca EAN: {extracted_ean}", "INFO")
+
+                if not extracted_ean:
+                    self.log(f"   ⚠️ Nu am găsit EAN (cod de bare) pe pagina produsului", "WARNING")
+
+            except Exception as ean_error:
+                self.log(f"   ⚠️ Eroare extragere EAN: {ean_error}", "WARNING")
             
             # Generează SKU din ID produsului intern sau folosește cel extras
             if extracted_sku:
@@ -1990,8 +2098,9 @@ class ImportProduse:
 
             product_data = {
                 'ean': ean if not ean.startswith('http') else product_link,
-                'ean_real': '',
-                'sku': generated_sku,
+                'ean_real': extracted_ean,  # EAN cod de bare real (8-14 cifre)
+                'sku': generated_sku,  # SKU intern MobileSentrix (ex: 230473)
+                'sku_furnizor': extracted_sku or generated_sku,  # SKU furnizor (ex: 107182127516)
                 'name': product_name,
                 'price': price,
                 'description': description,
