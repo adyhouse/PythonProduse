@@ -1438,6 +1438,7 @@ class ImportProduse:
                     'meta:gtin_ean', 'meta:sku_furnizor', 'meta:furnizor_activ',
                     'meta:pret_achizitie', 'meta:locatie_stoc', 'meta:garantie_luni',
                     'meta:coduri_compatibilitate', 'meta:ic_movable', 'meta:truetone_support',
+                    'meta:source_url',
                     # SEO RANK MATH
                     'meta:rank_math_title', 'meta:rank_math_description', 'meta:rank_math_focus_keyword'
                 ]
@@ -1718,6 +1719,7 @@ class ImportProduse:
                         'meta:coduri_compatibilitate': product.get('coduri_compatibilitate', ''),
                         'meta:ic_movable': ic_movable_val,
                         'meta:truetone_support': truetone_val,
+                        'meta:source_url': product.get('source_url', ''),
                         # SEO RANK MATH
                         'meta:rank_math_title': seo_title[:60],
                         'meta:rank_math_description': seo_description[:160],
@@ -2452,6 +2454,7 @@ class ImportProduse:
                 'pret_achizitie_eur': price,
                 'availability': availability,
                 'locatie_stoc': locatie_stoc,
+                'source_url': product_link or '',  # URL sursă: direct din input sau pagina finală după căutare
             }
 
             self.log(f"   ✓ Date extrase cu succes! (format WebGSM)", "SUCCESS")
