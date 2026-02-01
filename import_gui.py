@@ -682,8 +682,7 @@ class ImportProduse:
                 brand_piesa = 'Apple Original'
             elif 'samsung' in text and ('original' in text or 'genuine' in text or 'service pack' in text):
                 brand_piesa = 'Samsung Original'
-            elif calitate == 'Aftermarket Plus':
-                brand_piesa = 'Aftermarket Plus'
+        # NU pune "Aftermarket Plus" în brand_piesa - e CALITATE, nu brand. Brand = JK, GX, ZY, etc.
 
         # TEHNOLOGIE (doar pentru ecrane)
         tehnologie = ''
@@ -1220,27 +1219,18 @@ class ImportProduse:
             refresh_rate = '90Hz'
 
         # 4. Construiește titlul: Tip + Model + Tehnologie + RefreshRate + Brand + Culoare - Calitate
-        parts = [tip_ro]
-
-        if pa_model:
-            parts.append(pa_model)
-
-        if pa_tehnologie:
-            parts.append(pa_tehnologie)
-
-        if refresh_rate:
-            parts.append(refresh_rate)
-
-        if pa_brand_piesa:
-            parts.append(pa_brand_piesa)
-
-        if color:
-            parts.append(color)
+        # Folosește seen ca să nu adaugi aceeași valoare de 2 ori (ex: Aftermarket Plus)
+        parts = []
+        seen = set()
+        for part in [tip_ro, pa_model, pa_tehnologie, refresh_rate, pa_brand_piesa, color]:
+            if part and (part not in seen):
+                parts.append(part)
+                seen.add(part)
 
         longtail = ' '.join(parts)
 
-        # Adaugă calitatea ca sufix dacă nu e generic "Aftermarket"
-        if pa_calitate and pa_calitate not in ('Aftermarket', ''):
+        # Adaugă calitatea ca sufix dacă nu e generic "Aftermarket" și nu e deja în titlu
+        if pa_calitate and pa_calitate not in ('Aftermarket', '') and pa_calitate not in longtail:
             longtail += f" - {pa_calitate}"
 
         # Corectează diacriticele (sedilă → virgulă)
@@ -1358,7 +1348,7 @@ class ImportProduse:
                     # SEO RANK MATH
                     'meta:rank_math_title', 'meta:rank_math_description', 'meta:rank_math_focus_keyword'
                 ]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
 
                 writer.writeheader()
 
@@ -1484,11 +1474,27 @@ class ImportProduse:
                     if len(short_description) > 160:
                         short_description = short_description[:157] + "..."
 
+                    # Înlocuiește "Produs" generic în descriere cu tipul real (Ecran, Baterie, etc.)
+                    clean_desc_ro = clean_desc_ro.replace('Produs ', tip_ro + ' ').replace('produs ', tip_ro.lower() + ' ')
+                    clean_desc_ro = clean_desc_ro.replace('Produs.', tip_ro + '.').replace('produs.', tip_ro.lower() + '.')
+
                     # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
 
-                    # EAN: cod de bare real extras de pe pagina furnizorului
-                    ean_value = product.get('ean_real', '')
+                    # EAN: cod de bare real extras - salvat ca TEXT (evită 1.07E+11 în Excel)
+                    ean_raw = product.get('ean_real', '') or product.get('sku_furnizor', '')
+                    ean_str = str(ean_raw).strip()
+                    if ean_str:
+                        if ean_str.isdigit():
+                            ean_value = ean_str  # deja text, păstrează
+                        else:
+                            try:
+                                # Notă științifică sau float: convertește la string fără exponent
+                                ean_value = str(int(float(ean_str)))
+                            except (ValueError, TypeError):
+                                ean_value = ean_str
+                    else:
+                        ean_value = ''
 
                     # SKU furnizor: codul MobileSentrix (ex: 107182127516)
                     sku_furnizor = product.get('sku_furnizor', product.get('sku', ''))
