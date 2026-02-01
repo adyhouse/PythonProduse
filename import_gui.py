@@ -485,6 +485,11 @@ class ImportProduse:
 
         # CODURI MODEL TELEFON
         model_map = {
+            'iphone 17 pro max': 'IP17PM',
+            'iphone 17 pro': 'IP17P',
+            'iphone 17 plus': 'IP17PL',
+            'iphone 17 air': 'IP17A',
+            'iphone 17': 'IP17',
             'iphone 16 pro max': 'IP16PM',
             'iphone 16 pro': 'IP16P',
             'iphone 16 plus': 'IP16PL',
@@ -558,9 +563,9 @@ class ImportProduse:
 
         return f"WG-{type_code}-{model_code}-{brand_code}-{counter:02d}"
 
-    def extract_product_attributes(self, product_name, description=''):
+    def extract_product_attributes(self, product_name, description='', product_url=''):
         """
-        Extrage atributele WooCommerce din titlul produsului.
+        Extrage atributele WooCommerce din titlul produsului (și opțional din URL slug).
         Returnează: pa_model, pa_calitate, pa_brand-piesa, pa_tehnologie
         """
         text = f"{product_name} {description}".lower()
@@ -568,6 +573,11 @@ class ImportProduse:
         # MODEL COMPATIBIL (ordinea contează - cele mai specifice primele)
         model = ''
         model_patterns = [
+            ('iphone 17 pro max', 'iPhone 17 Pro Max'),
+            ('iphone 17 pro', 'iPhone 17 Pro'),
+            ('iphone 17 plus', 'iPhone 17 Plus'),
+            ('iphone 17 air', 'iPhone 17 Air'),
+            ('iphone 17', 'iPhone 17'),
             ('iphone 16 pro max', 'iPhone 16 Pro Max'),
             ('iphone 16 pro', 'iPhone 16 Pro'),
             ('iphone 16 plus', 'iPhone 16 Plus'),
@@ -626,12 +636,22 @@ class ImportProduse:
                 model = value
                 break
 
-        # CALITATE
+        # Fallback: extrage model din URL slug (ex: .../iphone-17-aftermarket-plus-soft...)
+        if not model and product_url:
+            slug_lower = product_url.rstrip('/').split('/')[-1].replace('-', ' ')
+            for pattern, value in model_patterns:
+                if pattern in slug_lower:
+                    model = value
+                    break
+
+        # CALITATE (ordinea contează - cele mai specifice primele)
         calitate = 'Aftermarket'
         if 'service pack' in text or ('original' in text and 'genuine' in text):
             calitate = 'Service Pack'
         elif 'genuine' in text:
             calitate = 'Service Pack'
+        elif 'aftermarket plus' in text:
+            calitate = 'Aftermarket Plus'
         elif 'premium' in text or ('oem' in text and 'premium' in text):
             calitate = 'Premium OEM'
         elif 'oem' in text:
@@ -639,7 +659,7 @@ class ImportProduse:
         elif 'refurbished' in text or 'refurb' in text:
             calitate = 'Refurbished'
 
-        # BRAND PIESA
+        # BRAND PIESA (Aftermarket Plus = calitate premium, poate apărea și ca brand)
         brand_piesa = ''
         brand_patterns = [
             ('JK', [' jk ', ' jk-', '(jk)', 'jk incell', 'jk soft']),
@@ -662,13 +682,23 @@ class ImportProduse:
                 brand_piesa = 'Apple Original'
             elif 'samsung' in text and ('original' in text or 'genuine' in text or 'service pack' in text):
                 brand_piesa = 'Samsung Original'
+            elif calitate == 'Aftermarket Plus':
+                brand_piesa = 'Aftermarket Plus'
 
         # TEHNOLOGIE (doar pentru ecrane)
         tehnologie = ''
         if any(x in text for x in ['display', 'screen', 'lcd', 'oled', 'ecran', 'assembly']):
-            if 'soft oled' in text:
+            if 'soft' in text and 'oled' in text:
+                tehnologie = 'Soft OLED'
+            elif 'soft oled' in text:
+                tehnologie = 'Soft OLED'
+            elif ': soft)' in text or ': soft ' in text or ': soft' in text or ':soft' in text:
+                # Pattern MobileSentrix: "(Aftermarket Plus: Soft)"
                 tehnologie = 'Soft OLED'
             elif 'hard oled' in text:
+                tehnologie = 'Hard OLED'
+            elif ': hard)' in text or ': hard ' in text or ':hard' in text:
+                # Pattern MobileSentrix: "(Aftermarket Plus: Hard)"
                 tehnologie = 'Hard OLED'
             elif 'amoled' in text:
                 tehnologie = 'AMOLED'
@@ -682,6 +712,13 @@ class ImportProduse:
                 tehnologie = 'TFT'
             elif 'lcd' in text:
                 tehnologie = 'LCD'
+
+        # 🎯 Detectare 120Hz / 90Hz din titlu
+        self._detected_refresh_rate = ''
+        if '120hz' in text or '120 hz' in text:
+            self._detected_refresh_rate = '120Hz'
+        elif '90hz' in text or '90 hz' in text:
+            self._detected_refresh_rate = '90Hz'
 
         return {
             'pa_model': model,
@@ -792,9 +829,9 @@ class ImportProduse:
 
     def generate_seo_title(self, product_name, model, brand_piesa, tehnologie):
         """
-        Generează titlu SEO optimizat.
-        Format: "{Tip} {Model} {Tehnologie} {Brand} - Garanție 24 Luni | WebGSM"
-        Exemplu: "Ecran iPhone 13 OLED JK - Garanție 24 Luni | WebGSM"
+        Generează titlu SEO optimizat (max 60 chars pentru Google).
+        Format: "{Tip} {Model} {Tehnologie} {Brand} {120Hz} - Garanție | WebGSM"
+        Exemplu: "Ecran iPhone 17 Soft OLED 120Hz - Garanție | WebGSM"
         """
         tip_ro = self._detect_tip_produs_ro(product_name)
 
@@ -806,14 +843,26 @@ class ImportProduse:
         if brand_piesa:
             parts.append(brand_piesa)
 
+        # Detectează 120Hz din titlul original
+        name_lower = product_name.lower()
+        if '120hz' in name_lower or '120 hz' in name_lower:
+            parts.append('120Hz')
+
         title = ' '.join(parts)
-        seo = f"{title} - Garanție 24 Luni | WebGSM"
+        seo = f"{title} - Garanție | WebGSM"
+
+        # Dacă e prea lung (>60 chars), scurtăm sufixul
+        if len(seo) > 60:
+            seo = f"{title} | WebGSM"
+        if len(seo) > 60:
+            seo = title[:57] + "..."
+
         return self.fix_romanian_diacritics(seo)
 
     def generate_seo_description(self, product_name, model, brand_piesa, tehnologie, calitate):
         """
         Generează meta description SEO (max 155 caractere).
-        Exemplu: "Ecran iPhone 13 OLED JK calitate Premium OEM. Garanție 24 luni. Livrare rapidă Timișoara și România."
+        Exemplu: "Ecran iPhone 17 Soft OLED calitate Aftermarket Plus 120Hz. Garanție 24 luni. Livrare rapidă România."
         """
         tip_ro = self._detect_tip_produs_ro(product_name)
 
@@ -825,7 +874,12 @@ class ImportProduse:
         if calitate:
             desc += f" calitate {calitate}"
 
-        desc += ". Garanție 24 luni. Livrare rapidă Timișoara și România."
+        # Detectează 120Hz din titlul original
+        name_lower = product_name.lower()
+        if '120hz' in name_lower or '120 hz' in name_lower:
+            desc += " 120Hz"
+
+        desc += ". Garanție 24 luni. Livrare rapidă România."
 
         # Curăță spații duble
         desc = ' '.join(desc.split())
@@ -838,14 +892,15 @@ class ImportProduse:
     def generate_focus_keyword(self, product_name, model):
         """
         Generează focus keyword pentru Rank Math SEO.
-        Exemplu: "ecran iphone 13"
+        Exemplu: "ecran iphone 17 oled"
         """
         tip_map = {
             'display': 'ecran', 'screen': 'ecran', 'oled': 'ecran',
-            'lcd': 'ecran', 'digitizer': 'ecran',
+            'lcd': 'ecran', 'digitizer': 'ecran', 'assembly': 'ecran',
             'battery': 'baterie', 'acumulator': 'baterie',
             'camera': 'camera', 'lens': 'camera',
             'flex': 'flex', 'cable': 'flex', 'connector': 'flex',
+            'charging port': 'port incarcare',
             'housing': 'carcasa', 'back glass': 'carcasa', 'frame': 'carcasa',
             'speaker': 'difuzor', 'earpiece': 'difuzor',
             'button': 'buton',
@@ -857,9 +912,17 @@ class ImportProduse:
                 tip_ro = ro
                 break
 
+        parts = [tip_ro]
         if model:
-            return f"{tip_ro} {model}".lower()
-        return tip_ro
+            parts.append(model.lower())
+
+        # Adaugă tehnologia principală pentru keyword mai precis
+        if 'oled' in text:
+            parts.append('oled')
+        elif 'lcd' in text:
+            parts.append('lcd')
+
+        return ' '.join(parts)
 
     def test_connection(self):
         """Testează conexiunea la WooCommerce"""
@@ -1148,7 +1211,15 @@ class ImportProduse:
                 color = col
                 break
 
-        # 3. Construiește titlul: Tip + Model + Tehnologie + Brand + Culoare - Calitate
+        # 3. Detectare 120Hz/90Hz din titlu original + descriere
+        refresh_rate = ''
+        combined_lower = f"{original_name} {description}".lower()
+        if '120hz' in combined_lower or '120 hz' in combined_lower:
+            refresh_rate = '120Hz'
+        elif '90hz' in combined_lower or '90 hz' in combined_lower:
+            refresh_rate = '90Hz'
+
+        # 4. Construiește titlul: Tip + Model + Tehnologie + RefreshRate + Brand + Culoare - Calitate
         parts = [tip_ro]
 
         if pa_model:
@@ -1156,6 +1227,9 @@ class ImportProduse:
 
         if pa_tehnologie:
             parts.append(pa_tehnologie)
+
+        if refresh_rate:
+            parts.append(refresh_rate)
 
         if pa_brand_piesa:
             parts.append(pa_brand_piesa)
@@ -1165,7 +1239,7 @@ class ImportProduse:
 
         longtail = ' '.join(parts)
 
-        # Adaugă calitatea ca sufix dacă nu e default
+        # Adaugă calitatea ca sufix dacă nu e generic "Aftermarket"
         if pa_calitate and pa_calitate not in ('Aftermarket', ''):
             longtail += f" - {pa_calitate}"
 
@@ -1395,6 +1469,21 @@ class ImportProduse:
                     clean_desc_ro = self.translate_text(clean_desc, source='en', target='ro')
                     self.log(f"   🌍 Descriere tradusă: {len(clean_desc)} → {len(clean_desc_ro)} caractere", "INFO")
 
+                    # 🔧 Generează Short Description inteligent (nu "Produs" generic)
+                    tip_ro = self._detect_tip_produs_ro(clean_name)
+                    short_desc_parts = [tip_ro]
+                    if pa_model:
+                        short_desc_parts.append(pa_model)
+                    if pa_tehnologie:
+                        short_desc_parts.append(pa_tehnologie)
+                    if pa_calitate and pa_calitate != 'Aftermarket':
+                        short_desc_parts.append(f"calitate {pa_calitate}")
+                    short_desc_intro = ' '.join(short_desc_parts)
+                    short_description = f"{short_desc_intro}. Garanție inclusă. Livrare rapidă în toată România."
+                    short_description = self.fix_romanian_diacritics(short_description)
+                    if len(short_description) > 160:
+                        short_description = short_description[:157] + "..."
+
                     # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
 
@@ -1435,7 +1524,7 @@ class ImportProduse:
                         'Published': '1',
                         'Is featured?': '0',
                         'Visibility in catalog': 'visible',
-                        'Short description': clean_desc_ro[:160],
+                        'Short description': short_description,
                         'Description': clean_desc_ro,
                         'Tax status': 'taxable',
                         'Tax class': '',
@@ -1852,15 +1941,26 @@ class ImportProduse:
                         if img.width > max_size[0] or img.height > max_size[1]:
                             img.thumbnail(max_size, Image.Resampling.LANCZOS)
 
-                        # Convertește RGBA/P -> RGB pentru JPEG
-                        if img.mode in ('RGBA', 'P'):
-                            img = img.convert('RGB')
+                        # 🖼️ Detectează transparență (canal alpha) - NU converti la JPEG!
+                        has_transparency = img.mode in ('RGBA', 'LA') or \
+                                          (img.mode == 'P' and 'transparency' in img.info)
 
-                        img_extension = 'jpg'  # Standardizează la JPEG (dimensiune mică)
-                        img_filename = f"{product_id}_{idx}.{img_extension}"
-                        img_path = Path("images") / img_filename
-
-                        img.save(img_path, 'JPEG', quality=85, optimize=True)
+                        if has_transparency:
+                            # Păstrează transparența → salvează ca WebP (suportă alpha, fișier mic)
+                            if img.mode in ('P', 'LA'):
+                                img = img.convert('RGBA')
+                            img_extension = 'webp'
+                            img_filename = f"{product_id}_{idx}.{img_extension}"
+                            img_path = Path("images") / img_filename
+                            img.save(img_path, 'WEBP', quality=90)
+                        else:
+                            # Fără transparență → JPEG (cel mai mic)
+                            if img.mode in ('RGBA', 'P', 'LA'):
+                                img = img.convert('RGB')
+                            img_extension = 'jpg'
+                            img_filename = f"{product_id}_{idx}.{img_extension}"
+                            img_path = Path("images") / img_filename
+                            img.save(img_path, 'JPEG', quality=85, optimize=True)
                         file_size = img_path.stat().st_size / (1024 * 1024)
 
                         return {
@@ -2144,7 +2244,7 @@ class ImportProduse:
             category_path = self.detect_category(product_name, tags)
 
             # ===== WEBGSM: Extrage atribute, categorie slug, coduri, features =====
-            attributes = self.extract_product_attributes(product_name, description)
+            attributes = self.extract_product_attributes(product_name, description, product_link or '')
             category_slug = self.get_webgsm_category(product_name)
             compat_codes = self.extract_compatibility_codes(description)
             screen_features = self.detect_screen_features(product_name, description)
