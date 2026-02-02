@@ -1815,28 +1815,27 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         short_description = f"{short_desc_intro}. Garanție inclusă. Livrare rapidă în toată România."
                         short_description = self.curata_text(short_description)[:160]
 
-                    # Fișă tehnică: tabel HTML (Calitate, Model, Brand, Tehnologie, Garanție, Tip) – tip_ro poate veni de la Ollama
-                    fisa_tehnica_html = (
-                        '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
-                        '<tr><td><strong>Calitate</strong></td><td>{}</td></tr>'
-                        '<tr><td><strong>Model Compatibil</strong></td><td>{}</td></tr>'
-                        '<tr><td><strong>Brand Piesa</strong></td><td>{}</td></tr>'
-                        '<tr><td><strong>Tehnologie</strong></td><td>{}</td></tr>'
-                        '<tr><td><strong>Garanție</strong></td><td>24 luni</td></tr>'
-                        '<tr><td><strong>Tip Produs</strong></td><td>{}</td></tr>'
-                        '</table>'
-                    ).format(
-                        self.curata_text(pa_calitate) if pa_calitate else '-',
-                        self.curata_text(pa_model) if pa_model else '-',
-                        self.curata_text(pa_brand_piesa) if pa_brand_piesa else '-',
-                        self.curata_text(pa_tehnologie) if pa_tehnologie else '-',
-                        self.curata_text(tip_ro) if tip_ro else '-'
-                    )
-                    # Description: descriere adaptată (Ollama) + tabel specificații tehnice
+                    # Description: doar textul descrierii, fără tabel (Calitate/Model/Brand sunt deja în atribute și detalii tehnice pe site)
+                    # Format: bullet list (ul/li) dacă sunt mai multe linii, altfel paragraf
                     if ollama_data and ollama_data.get('desc_ro'):
-                        clean_desc_ro = '<p>' + self.curata_text(ollama_data['desc_ro']).replace('\n', '</p><p>') + '</p>\n\n' + fisa_tehnica_html
+                        raw_desc = self.curata_text(ollama_data['desc_ro'])
+                        # Linii: din | sau \n
+                        lines = [s.strip() for s in re.split(r'[\n|]+', raw_desc) if s.strip()]
+                        if len(lines) >= 2:
+                            # Listă cu bullet-uri
+                            clean_desc_ro = '<ul>\n' + '\n'.join('<li>' + html.escape(line) + '</li>' for line in lines) + '\n</ul>'
+                        elif lines:
+                            clean_desc_ro = '<p>' + html.escape(lines[0]) + '</p>'
+                        else:
+                            clean_desc_ro = '<p>' + html.escape(raw_desc[:2000]) + '</p>'
                     else:
-                        clean_desc_ro = fisa_tehnica_html
+                        # Fără Ollama: descriere din date – dacă are mai multe linii, listă cu bullet-uri
+                        raw_fallback = (product.get('description', '') or '')[:2000]
+                        lines_fb = [s.strip() for s in re.split(r'[\n|]+', raw_fallback) if s.strip()]
+                        if len(lines_fb) >= 2:
+                            clean_desc_ro = '<ul>\n' + '\n'.join('<li>' + html.escape(line) + '</li>' for line in lines_fb) + '\n</ul>'
+                        else:
+                            clean_desc_ro = '<p>' + html.escape(raw_fallback) + '</p>'
 
                     # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
