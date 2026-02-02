@@ -1,8 +1,27 @@
 # Lista LINK-URI sau EAN-uri pentru import
 # Poți pune:
 #   - Link-uri directe din MobileSentrix (RECOMANDAT!)
+#   - SAU link + cod categorie: URL | COD  (ex: https://... | BAT)
 #   - SAU EAN-uri (dacă există în căutare)
 #   - SAU SKU MobileSentrix (12-14 cifre)
-
-# Link-uri de produse:
-https://www.mobilesentrix.eu/back-camera-compatible-for-iphone-17-pro-17-pro-max
+#
+# === LEGENDA CODURI CATEGORIE – format în fișier: link | COD ===
+# Exemplu cum trebuie să arate o linie (link + spațiu + pipe + spațiu + COD):
+#
+# https://www.mobilesentrix.eu/ecran-iphone-14 |           | SCR     → Ecrane / Display
+# https://www.mobilesentrix.eu/baterie-iphone-14 |         | BAT   → Baterii
+# https://www.mobilesentrix.eu/mufa-incarcare-iphone |     | CHG   → Mufe / Încărcare
+# https://www.mobilesentrix.eu/flex-display-iphone |       | FLX   → Flex-uri diverse
+# https://www.mobilesentrix.eu/sticla-spate-iphone |       | STC   → Sticlă / Geam
+# https://www.mobilesentrix.eu/camera-spate-iphone |       | CAM   → Camere Foto
+# https://www.mobilesentrix.eu/surubelnita-xiaomi |        | TOOL  → Unelte / Scule
+# https://www.mobilesentrix.eu/tester-ibridge |            | EQP   → Echipamente / Testere
+# https://www.mobilesentrix.eu/adeziv-b7000 |              | CNS   → Consumabile (Adeziv)
+#
+# === Dacă descoperi un prefix nou care nu e în legendă:
+#    Adaugă în import_gui.py în dicționarul CATEGORY_CODE_MAP o linie:
+#    'COD': {'cat': 'Nume Categorie', 'parent': None sau 'Accesorii Service', 'prefix': 'COD'},
+# ===
+#
+# Link-uri de produse. Format: link | COD (ex: | CAM pentru cameră)
+https://www.mobilesentrix.eu/back-camera-compatible-for-iphone-17-pro-17-pro-max | CAM

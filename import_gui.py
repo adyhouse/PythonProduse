@@ -30,6 +30,22 @@ import uuid
 import time
 from deep_translator import GoogleTranslator
 
+# Coduri categorie manuale (sku_list: link | COD) – prioritate față de Ollama
+# Cum adaugi un cod nou (dacă descoperi un prefix TOOL/BAT/etc. care nu e în legenda din sku_list.txt):
+#   Adaugă o linie: 'COD': {'cat': 'Nume Categorie', 'parent': None sau 'Accesorii Service', 'prefix': 'COD'},
+#   parent=None → categorie "Piese {Brand} > NumeCategorie {Brand}"; parent='Accesorii Service' → "Accesorii Service > NumeCategorie"
+CATEGORY_CODE_MAP = {
+    'SCR': {'cat': 'Ecrane', 'parent': None, 'prefix': 'SCR'},           # Ecrane / Display
+    'BAT': {'cat': 'Baterii', 'parent': None, 'prefix': 'BAT'},
+    'CHG': {'cat': 'Mufe Incarcare', 'parent': None, 'prefix': 'CHG'},   # Mufe / Încărcare
+    'FLX': {'cat': 'Flexuri', 'parent': None, 'prefix': 'FLX'},
+    'STC': {'cat': 'Sticla', 'parent': None, 'prefix': 'STC'},           # Sticlă / Geam
+    'CAM': {'cat': 'Camere', 'parent': None, 'prefix': 'CAM'},
+    'TOOL': {'cat': 'Unelte', 'parent': 'Accesorii Service', 'prefix': 'TOOL'},
+    'EQP': {'cat': 'Echipamente', 'parent': 'Accesorii Service', 'prefix': 'EQP'},
+    'CNS': {'cat': 'Consumabile', 'parent': 'Accesorii Service', 'prefix': 'CNS'},
+}
+
 class ImportProduse:
     def __init__(self, root):
         self.root = root
@@ -514,13 +530,21 @@ class ImportProduse:
         sku = f"890{sequential_id:05d}00000"
         return sku
 
-    def generate_webgsm_sku(self, product_name, brand_piesa, counter, calitate=None):
+    def generate_webgsm_sku(self, product_name, brand_piesa, counter, calitate=None, manual_code=None):
         """
         Generează SKU unic format: WG-{TIP}-{MODEL}-{BRAND}-{ID}
         Exemple: WG-BAT-IP17-PULL-01, WG-CP-IP17-OEM-01, WG-ECR-IP13-JK-01
+        Dacă manual_code este setat (din sku_list: link | COD), prefixul vine din CATEGORY_CODE_MAP.
         """
-        # CODURI TIP PIESA - ORDINEA CONTEAZĂ (cele mai specifice primele)
-        type_map = {
+        type_code = None
+        if manual_code and isinstance(manual_code, str):
+            manual_code = manual_code.strip().upper()
+            if manual_code in CATEGORY_CODE_MAP:
+                type_code = CATEGORY_CODE_MAP[manual_code].get('prefix', manual_code)
+
+        if type_code is None:
+            # CODURI TIP PIESA - ORDINEA CONTEAZĂ (cele mai specifice primele)
+            type_map = {
             'ECR': ['display', 'screen', 'oled', 'lcd', 'digitizer', 'ecran'],
             'BAT': ['battery', 'baterie', 'acumulator'],
             'CP': ['charging port'],  # Conector Încărcare
@@ -539,12 +563,13 @@ class ImportProduse:
 
         name_lower = product_name.lower()
 
-        # Detectează tipul piesei
-        type_code = 'PIS'  # default = Piesă
-        for code, keywords in type_map.items():
-            if any(kw in name_lower for kw in keywords):
-                type_code = code
-                break
+        if type_code is None:
+            # Detectează tipul piesei
+            type_code = 'PIS'  # default = Piesă
+            for code, keywords in type_map.items():
+                if any(kw in name_lower for kw in keywords):
+                    type_code = code
+                    break
 
         # CODURI MODEL TELEFON
         model_map = {
@@ -879,14 +904,17 @@ class ImportProduse:
             return f"{tip}-{brand}"
         return tip
 
-    def get_woo_category(self, product_name, product_type=''):
+    def get_woo_category(self, product_name, product_type='', manual_code=None):
         """
         Returnează categoria WooCommerce în format ierarhic (max 2 nivele).
         WebGSM: Brand > Tip Piesă. Atributele (Model, Calitate, Brand Piesa) sunt pentru filtrare, nu categorii.
+        Dacă manual_code este setat (din sku_list: link | COD), categoria vine din CATEGORY_CODE_MAP;
+        Ollama nu poate schimba categoria, doar brand-ul se poate extrage din titlu.
 
         Args:
             product_name: Numele produsului (ex: "Baterie pentru iPhone 14 Pro")
             product_type: Tipul din descriere/titlu RO (ex: "Baterie", "Ecran")
+            manual_code: Cod optional din sku_list (ex: BAT, SCR) – prioritate față de detectare automată
 
         Returns:
             String format "Parent > Child" (ex: "Piese iPhone > Baterii iPhone")
@@ -894,6 +922,37 @@ class ImportProduse:
         name_lower = (product_name or '').lower()
         type_lower = (product_type or '').lower()
         combined = name_lower + ' ' + type_lower
+
+        # Prioritate: cod manual din sku_list (link | COD)
+        if manual_code and isinstance(manual_code, str):
+            manual_code = manual_code.strip().upper()
+            if manual_code in CATEGORY_CODE_MAP:
+                m = CATEGORY_CODE_MAP[manual_code]
+                cat_name = m.get('cat', '')
+                parent = m.get('parent')
+                if parent:
+                    return f"{parent} > {cat_name}"
+                # Piese {Brand} > {Cat} {Brand} – inferăm brand din product_name
+                brand_suffix = ''
+                if 'iphone' in name_lower or 'apple' in name_lower:
+                    brand_suffix = 'iPhone'
+                elif 'samsung' in name_lower or 'galaxy' in name_lower:
+                    brand_suffix = 'Samsung'
+                elif 'huawei' in name_lower or 'honor' in name_lower:
+                    brand_suffix = 'Huawei'
+                elif 'xiaomi' in name_lower or 'redmi' in name_lower or 'poco' in name_lower:
+                    brand_suffix = 'Xiaomi'
+                elif 'google' in name_lower or 'pixel' in name_lower:
+                    brand_suffix = 'Google'
+                elif 'oneplus' in name_lower:
+                    brand_suffix = 'OnePlus'
+                elif 'motorola' in name_lower or 'moto ' in name_lower:
+                    brand_suffix = 'Motorola'
+                elif 'ipad' in name_lower:
+                    brand_suffix = 'iPad'
+                else:
+                    brand_suffix = 'Generic'
+                return f"Piese {brand_suffix} > {cat_name} {brand_suffix}"
 
         brand_parent = ''
         brand_suffix = ''
@@ -1225,30 +1284,38 @@ class ImportProduse:
             self.log(f"🚀 START PROCESARE PRODUSE (Mod: CSV WebGSM + Upload Imagini)", "INFO")
             self.log("=" * 70, "INFO")
 
-            # Citește SKU-uri (cale rezolvată în folderul scriptului)
-            skus = self.read_sku_file(getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get())
-            self.log(f"📋 Găsite {len(skus)} SKU-uri pentru procesare", "INFO")
+            # Citește SKU-uri (listă dict: url, code opțional din "link | COD")
+            sku_items = self.read_sku_file(getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get())
+            self.log(f"📋 Găsite {len(sku_items)} intrări pentru procesare", "INFO")
 
             success_count = 0
             error_count = 0
             sku_counter = 0  # Counter global pentru SKU-uri WebGSM
             products_data = []  # Lista pentru CSV
 
-            for idx, sku in enumerate(skus, 1):
+            for idx, item in enumerate(sku_items, 1):
                 if not self.running:
                     break
 
-                self.progress_var.set(f"Procesez produs {idx}/{len(skus)}: {sku}")
+                url_or_sku = item['url']
+                manual_code = item.get('code')
+                display_label = f"{url_or_sku[:55]}..." if len(url_or_sku) > 58 else url_or_sku
+                if manual_code:
+                    display_label += f" | {manual_code}"
+                    if manual_code.strip().upper() in CATEGORY_CODE_MAP:
+                        self.log(f"   📌 Cod manual: {manual_code} → categorie și prefix SKU din legendă", "INFO")
+                self.progress_var.set(f"Procesez produs {idx}/{len(sku_items)}: {display_label}")
                 self.log(f"\n" + "="*70, "INFO")
-                self.log(f"[{idx}/{len(skus)}] 🔵 START procesare: {sku}", "INFO")
+                self.log(f"[{idx}/{len(sku_items)}] 🔵 START procesare: {display_label}", "INFO")
                 self.log(f"="*70, "INFO")
 
                 try:
                     # Scraping produs de pe MobileSentrix
-                    product_data = self.scrape_product(sku)
+                    product_data = self.scrape_product(url_or_sku)
 
                     if product_data:
-                        # Generează WebGSM SKU (format: WG-TIP-MODEL-BRAND-ID)
+                        # Cod manual din sku_list (link | COD) are prioritate pentru categorie și prefix SKU
+                        product_data['manual_category_code'] = manual_code
                         sku_counter += 1
                         brand_piesa = product_data.get('pa_brand_piesa', '')
                         calitate = product_data.get('pa_calitate', '')
@@ -1256,7 +1323,8 @@ class ImportProduse:
                             product_data.get('name', ''),
                             brand_piesa,
                             sku_counter,
-                            calitate=calitate
+                            calitate=calitate,
+                            manual_code=manual_code
                         )
 
                         # Adaugă date suplimentare
@@ -1296,7 +1364,7 @@ class ImportProduse:
             self.log(f"📊 SUMAR PROCESARE WEBGSM:", "INFO")
             self.log(f"   ✓ Produse procesate cu succes: {success_count}", "SUCCESS")
             self.log(f"   ✗ Erori scraping: {error_count}", "ERROR")
-            self.log(f"   📦 Total SKU-uri: {len(skus)}", "INFO")
+            self.log(f"   📦 Total intrări: {len(sku_items)}", "INFO")
             self.log(f"   📁 Imagini salvate în: images/", "INFO")
             if products_data:
                 self.log(f"   🏷️ SKU-uri generate: WG-...-01 pana la WG-...-{sku_counter:02d}", "INFO")
@@ -1322,18 +1390,28 @@ class ImportProduse:
             self.running = False
     
     def read_sku_file(self, filepath):
-        """Citește link-uri, EAN-uri sau SKU-uri din fișier
+        """Citește link-uri, EAN-uri sau SKU-uri din fișier.
         Acceptă:
         - URL direct: https://www.mobilesentrix.eu/...
+        - URL cu cod categorie: https://... | BAT  (pipe + spațiu opțional + COD)
         - SKU: 107182127516 (12-13 cifre)
         - EAN: 888888888888 (12-13 cifre - mai rar)
+        Returnează listă de dict: [{'url': str, 'code': str|None}, ...]
         """
         items = []
         with open(filepath, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
-                    items.append(line)
+                if not line or line.startswith('#'):
+                    continue
+                if '|' in line:
+                    parts = line.split('|', 1)
+                    url_part = parts[0].strip()
+                    code_part = parts[1].strip().upper() if len(parts) > 1 else None
+                    if url_part:
+                        items.append({'url': url_part, 'code': code_part or None})
+                else:
+                    items.append({'url': line, 'code': None})
         return items
 
     def load_category_rules(self, filepath="category_rules.txt"):
@@ -2006,8 +2084,9 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
 
-                    # Categorii: format ierarhic max 2 nivele (Brand > Tip Piesă) – pentru filtrare se folosesc atributele
-                    categories = self.get_woo_category(clean_name, tip_ro)
+                    # Categorii: manual_code din sku_list (link | COD) are prioritate; altfel get_woo_category automat
+                    manual_code = product.get('manual_category_code')
+                    categories = self.get_woo_category(clean_name, tip_ro, manual_code=manual_code)
 
                     # SEO Rank Math: din Ollama dacă avem, altfel funcții interne
                     if ollama_data:
