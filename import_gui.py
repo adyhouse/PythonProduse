@@ -1360,6 +1360,37 @@ class ImportProduse:
         text = self.fix_romanian_diacritics(text)
         return re.sub(r'\s+', ' ', text).strip()
 
+    def normalize_text(self, text):
+        """
+        Pentru nume fișiere SEO: elimină diacritice (ăâîșț → aaist),
+        lowercase, non-alfanumeric → cratimă, fără cratime duble/la capete.
+        """
+        if not text or not str(text).strip():
+            return ''
+        t = str(text).strip().lower()
+        # Diacritice românești → litere simple (ș ț ă â î)
+        diac = {'ă': 'a', 'â': 'a', 'î': 'i', 'ș': 's', 'ț': 't', 'ş': 's', 'ţ': 't'}
+        for d, r in diac.items():
+            t = t.replace(d, r)
+        # Non-alfanumeric → cratimă
+        t = re.sub(r'[^a-z0-9]+', '-', t)
+        # Cratime duble și de la capete
+        t = re.sub(r'-+', '-', t).strip('-')
+        return t
+
+    def generate_seo_filename(self, title, ext, index=None):
+        """
+        Nume fișier SEO din titlul tradus: normalizează și returnează {titlu-normalizat}.{ext}.
+        Dacă index este dat, returnează {titlu-normalizat}-{index}.{ext} (ex: ecran-iphone-17-1.webp).
+        """
+        ext = (ext or 'jpg').lstrip('.')
+        base = self.normalize_text(title) if title else 'produs'
+        if not base:
+            base = 'produs'
+        if index is not None:
+            base = f"{base}-{index}"
+        return f"{base}.{ext}"
+
     # ⚡ Cache traduceri - evită apeluri duplicate la Google Translate
     _translation_cache = {}
 
@@ -1449,10 +1480,50 @@ class ImportProduse:
                 for idx, product in enumerate(products_data, 1):
                     self.log(f"🔄 Proceseaza produs {idx}/{len(products_data)}: {product.get('name', 'N/A')}", "INFO")
 
+                    # Titlu și atribute (pentru redenumire imagini SEO și CSV)
+                    clean_name = product.get('name', 'N/A')
+                    if clean_name.endswith(' Copy'):
+                        clean_name = clean_name[:-5]
+                    clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
+                    self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
+                    pa_model = product.get('pa_model', '')
+                    pa_calitate = product.get('pa_calitate', 'Aftermarket')
+                    pa_brand_piesa = product.get('pa_brand_piesa', '')
+                    pa_tehnologie = product.get('pa_tehnologie', '')
+                    tip_ro = self._detect_tip_produs_ro(clean_name)
+                    description_for_longtail = product.get('description', '')
+                    longtail_attrs = {
+                        'pa_model': pa_model, 'pa_calitate': pa_calitate,
+                        'pa_brand_piesa': pa_brand_piesa, 'pa_tehnologie': pa_tehnologie,
+                        'original_name': clean_name,
+                    }
+                    longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail, longtail_attrs)
+                    self.log(f"   📝 Titlu Long Tail: {longtail_title}", "INFO")
+
                     # ⚡ Upload PARALEL imagini pe WordPress (de la ~2min la ~30s)
                     from concurrent.futures import ThreadPoolExecutor, as_completed
                     image_urls = []
                     if product.get('images'):
+                        # Redenumire imagini cu nume SEO (titlu tradus sau caracteristici produs)
+                        seo_title = longtail_title if (longtail_title and len(self.normalize_text(longtail_title)) >= 3) else ' '.join(filter(None, [tip_ro, pa_model, pa_tehnologie, pa_calitate])) or 'produs'
+                        images_dir = Path("images")
+                        for img_idx, img in enumerate(product['images']):
+                            if isinstance(img, dict) and 'local_path' in img:
+                                old_path = Path(img['local_path'])
+                                if old_path.exists():
+                                    ext = old_path.suffix.lstrip('.').lower() or 'jpg'
+                                    new_name = self.generate_seo_filename(seo_title, ext, img_idx + 1)
+                                    new_path = images_dir / new_name
+                                    if old_path.resolve() != new_path.resolve() and new_name != old_path.name:
+                                        try:
+                                            if new_path.exists():
+                                                new_path.unlink()
+                                            old_path.rename(new_path)
+                                            img['local_path'] = str(new_path)
+                                            img['name'] = new_name
+                                            self.log(f"   📁 Redenumit: {old_path.name} → {new_name}", "INFO")
+                                        except Exception as e:
+                                            self.log(f"   ⚠️ Redenumire {old_path.name}: {e}", "WARNING")
                         # Pregătește lista de imagini de uploadat
                         upload_tasks = []
                         fallback_urls = {}  # idx -> fallback URL
@@ -1524,33 +1595,6 @@ class ImportProduse:
                         )
                     else:
                         price_ron = price_eur
-
-                    # Curăță numele (elimină " Copy" de la sfârșit)
-                    clean_name = product.get('name', 'N/A')
-                    if clean_name.endswith(' Copy'):
-                        clean_name = clean_name[:-5]
-
-                    # Traduce numele în română
-                    clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
-                    self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
-
-                    # Atribute din produs (pre-extrase în scrape_product)
-                    pa_model = product.get('pa_model', '')
-                    pa_calitate = product.get('pa_calitate', 'Aftermarket')
-                    pa_brand_piesa = product.get('pa_brand_piesa', '')
-                    pa_tehnologie = product.get('pa_tehnologie', '')
-
-                    # Construiește titlu Long Tail SEO optimizat
-                    description_for_longtail = product.get('description', '')
-                    longtail_attrs = {
-                        'pa_model': pa_model,
-                        'pa_calitate': pa_calitate,
-                        'pa_brand_piesa': pa_brand_piesa,
-                        'pa_tehnologie': pa_tehnologie,
-                        'original_name': clean_name,  # titlul EN original pentru detectare tip
-                    }
-                    longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail, longtail_attrs)
-                    self.log(f"   📝 Titlu Long Tail: {longtail_title}", "INFO")
 
                     # Curăță descrierea (elimină URL-uri)
                     clean_desc = product.get('description', '')[:500]
