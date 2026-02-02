@@ -348,7 +348,9 @@ class ImportProduse:
             'WOOCOMMERCE_URL': 'https://webgsm.ro',
             'WOOCOMMERCE_CONSUMER_KEY': '',
             'WOOCOMMERCE_CONSUMER_SECRET': '',
-            'EXCHANGE_RATE': '4.97'
+            'EXCHANGE_RATE': '4.97',
+            'OLLAMA_URL': '',
+            'OLLAMA_MODEL': 'llama3.2'
         }
         
         # Încarcă din .env dacă există
@@ -359,7 +361,9 @@ class ImportProduse:
                     'WOOCOMMERCE_URL': os.getenv('WOOCOMMERCE_URL', 'https://webgsm.ro'),
                     'WOOCOMMERCE_CONSUMER_KEY': os.getenv('WOOCOMMERCE_CONSUMER_KEY', ''),
                     'WOOCOMMERCE_CONSUMER_SECRET': os.getenv('WOOCOMMERCE_CONSUMER_SECRET', ''),
-                    'EXCHANGE_RATE': os.getenv('EXCHANGE_RATE', '4.97')
+                    'EXCHANGE_RATE': os.getenv('EXCHANGE_RATE', '4.97'),
+                    'OLLAMA_URL': os.getenv('OLLAMA_URL', '').strip(),
+                    'OLLAMA_MODEL': os.getenv('OLLAMA_MODEL', 'llama3.2').strip() or 'llama3.2'
                 }
                 print(f"✓ Config încărcat din .env: {self.config}")
             except Exception as e:
@@ -1394,6 +1398,45 @@ class ImportProduse:
     # ⚡ Cache traduceri - evită apeluri duplicate la Google Translate
     _translation_cache = {}
 
+    def _looks_like_slug(self, text):
+        """True dacă textul arată ca un slug URL (multe cratime, puține spații)."""
+        if not text or len(text) < 4:
+            return False
+        hyphens = text.count('-')
+        spaces = text.count(' ')
+        # Slug tip: ibridge-a3-tail-plug-comprehensive-analysis-tester-qianli
+        return hyphens >= 2 and spaces <= 1
+
+    def translate_via_ollama(self, text, prompt_type='title'):
+        """Traduce/adaptează text prin API Ollama local (pentru slug-uri sau Componentă)."""
+        base_url = self.config.get('OLLAMA_URL', '').strip()
+        if not base_url:
+            return None
+        model = self.config.get('OLLAMA_MODEL', 'llama3.2') or 'llama3.2'
+        url = f"{base_url.rstrip('/')}/api/generate"
+        if prompt_type == 'title':
+            prompt = (
+                "Translate to Romanian and adapt as a short product name (2-6 words). "
+                "Output ONLY the Romanian text, nothing else, no quotes.\n\nEnglish: "
+            )
+        else:
+            prompt = "Translate to Romanian. Output ONLY the Romanian text, nothing else.\n\nEnglish: "
+        prompt += text.strip()
+        try:
+            r = requests.post(
+                url,
+                json={"model": model, "prompt": prompt, "stream": False},
+                timeout=60
+            )
+            r.raise_for_status()
+            out = r.json().get("response", "").strip()
+            if out:
+                out = self.fix_romanian_diacritics(out)
+                return out
+        except Exception as e:
+            self.log(f"⚠ Ollama: {e}", "WARNING")
+        return None
+
     def translate_text(self, text, source='en', target='ro'):
         """Traduce text folosind Google Translate (cu cache + diacritice corecte)."""
         if not text or not text.strip():
@@ -1484,13 +1527,25 @@ class ImportProduse:
                     clean_name = product.get('name', 'N/A')
                     if clean_name.endswith(' Copy'):
                         clean_name = clean_name[:-5]
-                    clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
-                    self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
+                    tip_ro = self._detect_tip_produs_ro(clean_name)
+                    use_ollama = bool(self.config.get('OLLAMA_URL')) and (
+                        self._looks_like_slug(clean_name) or tip_ro == 'Componentă'
+                    )
+                    if use_ollama:
+                        text_for_ollama = clean_name.replace('-', ' ')
+                        clean_name_ro = self.translate_via_ollama(text_for_ollama, 'title')
+                        if clean_name_ro is None:
+                            clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
+                            self.log(f"   🌍 Titlu tradus (fallback): {clean_name} → {clean_name_ro}", "INFO")
+                        else:
+                            self.log(f"   🤖 Ollama: {clean_name} → {clean_name_ro}", "INFO")
+                    else:
+                        clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
+                        self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
                     pa_model = product.get('pa_model', '')
                     pa_calitate = product.get('pa_calitate', 'Aftermarket')
                     pa_brand_piesa = product.get('pa_brand_piesa', '')
                     pa_tehnologie = product.get('pa_tehnologie', '')
-                    tip_ro = self._detect_tip_produs_ro(clean_name)
                     description_for_longtail = product.get('description', '')
                     longtail_attrs = {
                         'pa_model': pa_model, 'pa_calitate': pa_calitate,
