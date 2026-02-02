@@ -400,19 +400,26 @@ class ImportProduse:
                 messagebox.showwarning("Atenție", "Cursul valutar trebuie să fie un număr valid!")
                 return
             
-            # Crează sau actualizează .env
+            # Crează sau actualizează .env (păstrăm OLLAMA_* ca să nu se piardă la Salvează Config)
+            ollama_url = self.config.get('OLLAMA_URL', '')
+            ollama_model = self.config.get('OLLAMA_MODEL', 'llama3.1:latest') or 'llama3.1:latest'
             with open(self.env_file, 'w', encoding='utf-8') as f:
                 f.write(f"WOOCOMMERCE_URL={url}\n")
                 f.write(f"WOOCOMMERCE_CONSUMER_KEY={key}\n")
                 f.write(f"WOOCOMMERCE_CONSUMER_SECRET={secret}\n")
                 f.write(f"EXCHANGE_RATE={rate}\n")
+                f.write("\n# Ollama (traducere nume slug / Componentă)\n")
+                f.write(f"OLLAMA_URL={ollama_url}\n")
+                f.write(f"OLLAMA_MODEL={ollama_model}\n")
             
             # Actualizează config intern
             self.config = {
                 'WOOCOMMERCE_URL': url,
                 'WOOCOMMERCE_CONSUMER_KEY': key,
                 'WOOCOMMERCE_CONSUMER_SECRET': secret,
-                'EXCHANGE_RATE': rate
+                'EXCHANGE_RATE': rate,
+                'OLLAMA_URL': ollama_url,
+                'OLLAMA_MODEL': ollama_model
             }
             
             # Resetează API pentru a folosi noile credențiale
@@ -1519,6 +1526,12 @@ class ImportProduse:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
 
                 writer.writeheader()
+
+                ollama_ok = bool(self.config.get('OLLAMA_URL'))
+                if ollama_ok:
+                    self.log(f"🤖 Ollama activ: {self.config.get('OLLAMA_URL')} (traducere slug / Componentă)", "INFO")
+                else:
+                    self.log("🌍 Ollama neconfigurat (OLLAMA_URL gol în .env) – folosesc doar Google Translate", "INFO")
 
                 for idx, product in enumerate(products_data, 1):
                     self.log(f"🔄 Proceseaza produs {idx}/{len(products_data)}: {product.get('name', 'N/A')}", "INFO")
