@@ -534,7 +534,7 @@ class ImportProduse:
             'ANT': ['antenna', 'wifi', 'gps'],
             'FOL': ['folie', 'tempered', 'screen protector'],
             'FLX': ['flex', 'cable', 'connector', 'dock'],
-            'ACC': ['screwdriver', 'electric screwdriver', 'șurubelniță', 'unealtă'],
+            'ACC': ['screwdriver', 'electric screwdriver', 'șurubelniță', 'unealtă', 'tester', 'diagnostic', 'test tool', 'analysis tester'],
         }
 
         name_lower = product_name.lower()
@@ -941,6 +941,8 @@ class ImportProduse:
             return 'Șurub'
         if 'seal' in text:
             return 'Garnitură'
+        if any(x in text for x in ['tester', 'diagnostic', 'test tool', 'analysis tester']):
+            return 'Tester'
         return 'Componentă'
 
     def generate_seo_title(self, product_name, model, brand_piesa, tehnologie):
@@ -1382,13 +1384,26 @@ class ImportProduse:
 
         return text
 
+    def fix_common_translation_errors(self, text):
+        """
+        Corectează traduceri greșite frecvente: tester (dispozitiv) e tradus uneori „testator”.
+        testator = persoana care face testament; tester = dispozitiv de testare.
+        """
+        if not text or not isinstance(text, str):
+            return text
+        # Tester (dispozitiv) nu se traduce „testator”
+        text = re.sub(r'\btestator\b', 'tester', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bTestator\b', 'Tester', text)
+        return text
+
     def curata_text(self, text):
         """
-        Curăță text: diacritice ș/ț (sedilă → virgulă) și elimină spațiile duble.
+        Curăță text: diacritice ș/ț (sedilă → virgulă), corectări traduceri (testator→tester), elimină spații duble.
         """
         if not text:
             return text
         text = self.fix_romanian_diacritics(text)
+        text = self.fix_common_translation_errors(text)
         return re.sub(r'\s+', ' ', text).strip()
 
     def normalize_text(self, text):
@@ -1486,14 +1501,14 @@ Description/specs from source (EN): {desc_full}
 {tags_line}
 Attributes: Model={pa_model or '-'}, Calitate={pa_calitate or '-'}, Brand={pa_brand_piesa or '-'}, Tehnologie={pa_tehnologie or '-'}
 
-Translate and adapt for our CSV. Keep the structure of the description (e.g. Net Weight, Compatibility, Product size, Speed) when present. Output ONLY these lines, one per line:
+Translate and adapt for our CSV. Keep the structure of the description (e.g. Net Weight, Compatibility, Product size, Speed) when present. Important: for diagnostic/testing devices use "tester" in Romanian (dispozitiv de testare), never "testator" (persoana care face testament). Output ONLY these lines, one per line:
 NAME_RO: <one line, product name in Romanian, SEO-friendly, grammatically correct>
 SHORT_DESC_RO: <one line, short description in Romanian, max 160 chars, fluent>
 DESC_RO: <full description in Romanian; KEEP structure (Greutate netă, Compatibilitate, Dimensiuni, Viteză etc.); use | for line breaks; grammatically correct>
 SEO_TITLE: <one line, max 60 chars>
 SEO_DESC: <one line, max 155 chars>
 FOCUS_KW: <one short phrase for SEO>
-TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură>
+TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură, Tester>
 TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g. wholesale screwdrivers -> șurubelnițe en-gros); otherwise suggest max 6 short tags; comma-separated, max 8 tags, grammatically correct Romanian>"""
         try:
             r = requests.post(
@@ -2219,6 +2234,32 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     if description and len(description) > 30:
                         break
 
+            # Fallback: secțiunea "Product Description" cu listă (bullet points) – ex. iBridge, Qianli
+            if not description or len(description) < 80:
+                for elem in product_soup.find_all(string=re.compile(r'Product\s+Description', re.I)):
+                    parent = elem.find_parent(['div', 'section', 'article'])
+                    if not parent:
+                        parent = elem.find_parent()
+                    if parent:
+                        # Caută listă ul/ol cu li în același bloc
+                        ul = parent.find(['ul', 'ol'])
+                        if ul:
+                            items = [li.get_text(strip=True) for li in ul.find_all('li', limit=25) if li.get_text(strip=True)]
+                            if items and len(items) >= 2:
+                                description = '\n'.join(items)
+                                self.log(f"   📄 Descriere din listă (Product Description): {len(items)} puncte", "INFO")
+                                break
+                        # Sau paragrafe în același container
+                        paras = parent.find_all(['p', 'li'], limit=20)
+                        if paras:
+                            lines = [p.get_text(strip=True) for p in paras if p.get_text(strip=True) and len(p.get_text(strip=True)) > 20]
+                            if len(lines) >= 2 and any('designed for' in l.lower() or 'compatible' in l.lower() or 'ideal for' in l.lower() for l in lines):
+                                description = '\n'.join(lines)
+                                self.log(f"   📄 Descriere din paragrafe (Product Description): {len(lines)} linii", "INFO")
+                                break
+                    if description and len(description) > 80:
+                        break
+
             # Fallback MobileSentrix: caută blocul "Product Description" (Net Weight, Compatibility, Product size, Speed)
             if not description or len(description) < 50:
                 for elem in product_soup.find_all(string=re.compile(r'Product Description|Net Weight|Compatibility|Product size|Speed:', re.I)):
@@ -2234,6 +2275,28 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         parent = getattr(parent, 'parent', None)
                     if description and len(description) > 50:
                         break
+
+            # Fallback regex: descrieri tip bullet (Designed for..., Quickly identifies..., Compatible with..., etc.)
+            if not description or len(description) < 80:
+                page_text = product_soup.get_text(separator='\n')
+                bullet_lines = []
+                for pattern in [
+                    r'Designed for [^\n]+',
+                    r'Quickly identifies [^\n]+',
+                    r'Compatible with [^\n]+',
+                    r'Ideal for [^\n]+',
+                    r'High-quality [^\n]+',
+                    r'Compact and [^\n]+',
+                    r'Functionality assured[^\n]*',
+                ]:
+                    m = re.search(pattern, page_text, re.I)
+                    if m:
+                        line = m.group(0).strip()
+                        if 15 < len(line) < 400 and line not in bullet_lines:
+                            bullet_lines.append(line)
+                if len(bullet_lines) >= 2:
+                    description = '\n'.join(bullet_lines)
+                    self.log(f"   📄 Descriere extrasă din bullet-uri (regex): {len(bullet_lines)} linii", "INFO")
 
             # Fallback regex pe textul paginii: extrage specificații (Net Weight, Compatibility, Product size, Speed)
             if not description or len(description) < 50:
