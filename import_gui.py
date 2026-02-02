@@ -534,6 +534,7 @@ class ImportProduse:
             'ANT': ['antenna', 'wifi', 'gps'],
             'FOL': ['folie', 'tempered', 'screen protector'],
             'FLX': ['flex', 'cable', 'connector', 'dock'],
+            'ACC': ['screwdriver', 'electric screwdriver', 'șurubelniță', 'unealtă'],
         }
 
         name_lower = product_name.lower()
@@ -930,6 +931,8 @@ class ImportProduse:
             return 'Difuzor'
         if any(x in text for x in ['button', 'power button', 'volume']):
             return 'Buton'
+        if 'screwdriver' in text:
+            return 'Șurubelniță'
         if 'screw' in text:
             return 'Șurub'
         if 'seal' in text:
@@ -1457,6 +1460,67 @@ class ImportProduse:
             self.log(f"⚠ Ollama: {e}", "WARNING")
         return None
 
+    def ollama_generate_product_fields(self, source_url, name_en, description_en, pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie):
+        """
+        Generează toate câmpurile text pentru CSV (nume, descriere scurtă, SEO) prin Ollama.
+        source_url este DOAR pentru context – nu se modifică niciodată; rămâne link-ul MobileSentrix.
+        Returnează dict: name_ro, short_desc_ro, seo_title, seo_desc, focus_kw, tip_produs sau None la eșec.
+        """
+        base_url = self.config.get('OLLAMA_URL', '').strip()
+        if not base_url:
+            return None
+        model = self.config.get('OLLAMA_MODEL', 'llama3.2') or 'llama3.2'
+        url = f"{base_url.rstrip('/')}/api/generate"
+        desc_snippet = (description_en or '')[:400].replace('\n', ' ')
+        prompt = f"""You are a product data specialist for a Romanian e-commerce site (WebGSM) selling phone parts and accessories.
+
+IMPORTANT: The SOURCE PRODUCT URL below is the MobileSentrix link. Do NOT modify it and do NOT output it – we keep it unchanged in our system.
+
+SOURCE PRODUCT URL (read-only, do not change): {source_url}
+
+Product name (EN): {name_en}
+Description excerpt (EN): {desc_snippet}
+Attributes: Model={pa_model or '-'}, Calitate={pa_calitate or '-'}, Brand={pa_brand_piesa or '-'}, Tehnologie={pa_tehnologie or '-'}
+
+Generate Romanian content for our CSV. Reply ONLY with these lines, one per line, no other text:
+NAME_RO: <one line, product name in Romanian, SEO-friendly>
+SHORT_DESC_RO: <one line, short description in Romanian, max 160 chars>
+SEO_TITLE: <one line, max 60 chars, for Google>
+SEO_DESC: <one line, max 155 chars, meta description>
+FOCUS_KW: <one word or short phrase for SEO>
+TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură>"""
+        try:
+            r = requests.post(
+                url,
+                json={"model": model, "prompt": prompt, "stream": False},
+                timeout=90
+            )
+            r.raise_for_status()
+            out = r.json().get("response", "").strip()
+            if not out:
+                return None
+            out = self.fix_romanian_diacritics(out)
+            result = {}
+            for line in out.splitlines():
+                line = line.strip()
+                if line.startswith("NAME_RO:"):
+                    result["name_ro"] = line[8:].strip()
+                elif line.startswith("SHORT_DESC_RO:"):
+                    result["short_desc_ro"] = line[14:].strip()[:160]
+                elif line.startswith("SEO_TITLE:"):
+                    result["seo_title"] = line[10:].strip()[:60]
+                elif line.startswith("SEO_DESC:"):
+                    result["seo_desc"] = line[9:].strip()[:160]
+                elif line.startswith("FOCUS_KW:"):
+                    result["focus_kw"] = line[9:].strip()
+                elif line.startswith("TIP_PRODUS:"):
+                    result["tip_produs"] = line[11:].strip()
+            if result.get("name_ro"):
+                return result
+        except Exception as e:
+            self.log(f"⚠ Ollama (câmpuri produs): {e}", "WARNING")
+        return None
+
     def translate_text(self, text, source='en', target='ro'):
         """Traduce text folosind Google Translate (cu cache + diacritice corecte)."""
         if not text or not text.strip():
@@ -1542,46 +1606,60 @@ class ImportProduse:
 
                 ollama_ok = bool(self.config.get('OLLAMA_URL'))
                 if ollama_ok:
-                    self.log(f"🤖 Ollama activ: {self.config.get('OLLAMA_URL')} (traducere slug / Componentă)", "INFO")
+                    self.log(f"🤖 Ollama activ: {self.config.get('OLLAMA_URL')} – generează toate câmpurile (nume, descriere, SEO)", "INFO")
                 else:
-                    self.log("🌍 Ollama neconfigurat (OLLAMA_URL gol în .env) – folosesc doar Google Translate", "INFO")
+                    self.log("🌍 Ollama neconfigurat (OLLAMA_URL gol în .env) – folosesc Google Translate + logică internă", "INFO")
 
                 for idx, product in enumerate(products_data, 1):
                     self.log(f"🔄 Proceseaza produs {idx}/{len(products_data)}: {product.get('name', 'N/A')}", "INFO")
 
-                    # Titlu și atribute (pentru redenumire imagini SEO și CSV)
+                    # meta:source_url rămâne MEREU din scrape (link MobileSentrix) – nu se modifică niciodată
+                    source_url = product.get('source_url', '')
+
+                    # Atribute din scrape (folosite și de Ollama ca context)
                     clean_name = product.get('name', 'N/A')
                     if clean_name.endswith(' Copy'):
                         clean_name = clean_name[:-5]
-                    tip_ro = self._detect_tip_produs_ro(clean_name)
-                    use_ollama = bool(self.config.get('OLLAMA_URL')) and (
-                        self._looks_like_slug(clean_name) or tip_ro == 'Componentă'
-                    )
-                    if use_ollama:
-                        text_for_ollama = clean_name.replace('-', ' ')
-                        clean_name_ro = self.translate_via_ollama(text_for_ollama, 'title')
-                        if clean_name_ro is None:
-                            clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
-                            self.log(f"   🌍 Titlu tradus (fallback): {clean_name} → {clean_name_ro}", "INFO")
-                        else:
-                            self.log(f"   🤖 Ollama: {clean_name} → {clean_name_ro}", "INFO")
-                    else:
-                        if tip_ro == 'Componentă':
-                            self.log("   ⚠ Tip Componentă dar Ollama nu e folosit (OLLAMA_URL gol în .env?)", "WARNING")
-                        clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
-                        self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
                     pa_model = product.get('pa_model', '')
                     pa_calitate = product.get('pa_calitate', 'Aftermarket')
                     pa_brand_piesa = product.get('pa_brand_piesa', '')
                     pa_tehnologie = product.get('pa_tehnologie', '')
                     description_for_longtail = product.get('description', '')
-                    longtail_attrs = {
-                        'pa_model': pa_model, 'pa_calitate': pa_calitate,
-                        'pa_brand_piesa': pa_brand_piesa, 'pa_tehnologie': pa_tehnologie,
-                        'original_name': clean_name,
-                    }
-                    longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail, longtail_attrs)
-                    self.log(f"   📝 Titlu Long Tail: {longtail_title}", "INFO")
+
+                    ollama_data = None
+                    if ollama_ok:
+                        ollama_data = self.ollama_generate_product_fields(
+                            source_url, clean_name, description_for_longtail,
+                            pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie
+                        )
+                    if ollama_data:
+                        longtail_title = self.curata_text(ollama_data.get('name_ro', '')) or clean_name
+                        tip_ro = ollama_data.get('tip_produs', 'Componentă')
+                        clean_name_ro = longtail_title
+                        self.log(f"   🤖 Ollama: Name={longtail_title[:50]}..., Tip={tip_ro}", "INFO")
+                    else:
+                        tip_ro = self._detect_tip_produs_ro(clean_name)
+                        use_ollama_title = ollama_ok and (self._looks_like_slug(clean_name) or tip_ro == 'Componentă')
+                        if use_ollama_title:
+                            text_for_ollama = clean_name.replace('-', ' ')
+                            clean_name_ro = self.translate_via_ollama(text_for_ollama, 'title')
+                            if clean_name_ro is None:
+                                clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
+                            else:
+                                self.log(f"   🤖 Ollama (titlu): {clean_name} → {clean_name_ro}", "INFO")
+                        else:
+                            clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
+                            if clean_name_ro == clean_name and ollama_ok:
+                                clean_name_ro = self.translate_via_ollama(clean_name, 'title') or clean_name_ro
+                        if not use_ollama_title:
+                            self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
+                        longtail_attrs = {
+                            'pa_model': pa_model, 'pa_calitate': pa_calitate,
+                            'pa_brand_piesa': pa_brand_piesa, 'pa_tehnologie': pa_tehnologie,
+                            'original_name': clean_name,
+                        }
+                        longtail_title = self.build_longtail_title(clean_name_ro, description_for_longtail, longtail_attrs)
+                    self.log(f"   📝 Titlu (Name CSV): {longtail_title[:60]}...", "INFO")
 
                     # ⚡ Upload PARALEL imagini pe WordPress (de la ~2min la ~30s)
                     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1679,30 +1757,28 @@ class ImportProduse:
                     else:
                         price_ron = price_eur
 
-                    # Curăță descrierea (elimină URL-uri)
-                    clean_desc = product.get('description', '')[:500]
-                    clean_desc = re.sub(r'https?://\S+', '', clean_desc).strip()
+                    # Short description și Description: din Ollama dacă avem, altfel logică internă
+                    if ollama_data:
+                        short_description = self.curata_text(ollama_data.get('short_desc_ro', ''))[:160]
+                        if not short_description:
+                            short_description = f"{tip_ro}. Garanție inclusă. Livrare rapidă în toată România."
+                    else:
+                        clean_desc = product.get('description', '')[:500]
+                        clean_desc = re.sub(r'https?://\S+', '', clean_desc).strip()
+                        clean_desc_ro_tr = self.translate_text(clean_desc, source='en', target='ro')
+                        self.log(f"   🌍 Descriere tradusă: {len(clean_desc)} → {len(clean_desc_ro_tr)} caractere", "INFO")
+                        short_desc_parts = [tip_ro]
+                        if pa_model:
+                            short_desc_parts.append(pa_model)
+                        if pa_tehnologie:
+                            short_desc_parts.append(pa_tehnologie)
+                        if pa_calitate and pa_calitate != 'Aftermarket':
+                            short_desc_parts.append(f"calitate {pa_calitate}")
+                        short_desc_intro = ' '.join(short_desc_parts)
+                        short_description = f"{short_desc_intro}. Garanție inclusă. Livrare rapidă în toată România."
+                        short_description = self.curata_text(short_description)[:160]
 
-                    # Traduce descrierea în română
-                    clean_desc_ro = self.translate_text(clean_desc, source='en', target='ro')
-                    self.log(f"   🌍 Descriere tradusă: {len(clean_desc)} → {len(clean_desc_ro)} caractere", "INFO")
-
-                    # 🔧 Generează Short Description inteligent (nu "Produs" generic)
-                    tip_ro = self._detect_tip_produs_ro(clean_name)
-                    short_desc_parts = [tip_ro]
-                    if pa_model:
-                        short_desc_parts.append(pa_model)
-                    if pa_tehnologie:
-                        short_desc_parts.append(pa_tehnologie)
-                    if pa_calitate and pa_calitate != 'Aftermarket':
-                        short_desc_parts.append(f"calitate {pa_calitate}")
-                    short_desc_intro = ' '.join(short_desc_parts)
-                    short_description = f"{short_desc_intro}. Garanție inclusă. Livrare rapidă în toată România."
-                    short_description = self.curata_text(short_description)
-                    if len(short_description) > 160:
-                        short_description = short_description[:157] + "..."
-
-                    # Fișă tehnică: tabel HTML = oglindă EXACTĂ a Attribute 1, 2, 3, 4 + Garanție + Tip
+                    # Fișă tehnică: tabel HTML (Calitate, Model, Brand, Tehnologie, Garanție, Tip) – tip_ro poate veni de la Ollama
                     fisa_tehnica_html = (
                         '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
                         '<tr><td><strong>Calitate</strong></td><td>{}</td></tr>'
@@ -1784,12 +1860,18 @@ class ImportProduse:
                     # Păstrează și categoria ierarhică dacă slug-ul e gol
                     categories = category_slug if category_slug else product.get('category_path', '')
 
-                    # SEO Rank Math (funcții dedicate cu diacritice corecte)
-                    original_name = product.get('name', '')
-                    seo_title = self.generate_seo_title(original_name, pa_model, pa_brand_piesa, pa_tehnologie)
-                    seo_description = self.generate_seo_description(original_name, pa_model, pa_brand_piesa, pa_tehnologie, pa_calitate)
-                    seo_keyword = self.generate_focus_keyword(original_name, pa_model)
-
+                    # SEO Rank Math: din Ollama dacă avem, altfel funcții interne
+                    if ollama_data:
+                        seo_title = self.curata_text(ollama_data.get('seo_title', ''))[:60]
+                        seo_description = self.curata_text(ollama_data.get('seo_desc', ''))[:160]
+                        seo_keyword = self.curata_text(ollama_data.get('focus_kw', ''))
+                        if not seo_title:
+                            seo_title = longtail_title[:60]
+                    else:
+                        original_name = product.get('name', '')
+                        seo_title = self.generate_seo_title(original_name, pa_model, pa_brand_piesa, pa_tehnologie)
+                        seo_description = self.generate_seo_description(original_name, pa_model, pa_brand_piesa, pa_tehnologie, pa_calitate)
+                        seo_keyword = self.generate_focus_keyword(original_name, pa_model)
                     self.log(f"   🔍 SEO: {seo_title[:60]}...", "INFO")
 
                     # True Tone și IC transferabil doar pentru ecrane (LCD/OLED). La restul nu populăm.
@@ -1846,7 +1928,7 @@ class ImportProduse:
                         'meta:coduri_compatibilitate': product.get('coduri_compatibilitate', ''),
                         'meta:ic_movable': ic_movable_val,
                         'meta:truetone_support': truetone_val,
-                        'meta:source_url': product.get('source_url', ''),
+                        'meta:source_url': product.get('source_url', ''),  # MEREU din scrape (link MobileSentrix) – nu se modifică
                         # SEO RANK MATH
                         'meta:rank_math_title': seo_title[:60],
                         'meta:rank_math_description': seo_description[:160],
