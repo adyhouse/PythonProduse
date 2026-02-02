@@ -1464,10 +1464,10 @@ class ImportProduse:
             self.log(f"⚠ Ollama: {e}", "WARNING")
         return None
 
-    def ollama_generate_product_fields(self, source_url, name_en, description_en, pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie):
+    def ollama_generate_product_fields(self, source_url, name_en, description_en, pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie, tags_en=''):
         """
-        Generează toate câmpurile text pentru CSV (nume, descriere lungă, scurtă, SEO) prin Ollama.
-        source_url este DOAR pentru context – nu se modifică niciodată; rămâne link-ul MobileSentrix.
+        Generează toate câmpurile text pentru CSV (nume, descriere, SEO, tag-uri) prin Ollama.
+        source_url este DOAR pentru context – nu se modifică. tags_en = tag-uri de pe pagină (EN), traduse în TAGS_RO.
         Returnează dict: name_ro, short_desc_ro, desc_ro, seo_title, seo_desc, focus_kw, tip_produs, tags_ro.
         """
         base_url = self.config.get('OLLAMA_URL', '').strip()
@@ -1475,26 +1475,26 @@ class ImportProduse:
             return None
         model = self.config.get('OLLAMA_MODEL', 'llama3.2') or 'llama3.2'
         url = f"{base_url.rstrip('/')}/api/generate"
-        desc_full = (description_en or '')[:2000].replace('\n', ' ')
-        prompt = f"""You are a product data specialist for a Romanian e-commerce site (WebGSM) selling phone parts and accessories.
+        desc_full = (description_en or '')[:2800].replace('\n', ' ')
+        tags_line = f"Product tags from source (EN): {tags_en.strip()[:300]}" if tags_en and tags_en.strip() else "No tags from source."
+        prompt = f"""You are a product data specialist for a Romanian e-commerce site (WebGSM). Write ONLY in correct, fluent Romanian (gramatică corectă).
 
-IMPORTANT: The SOURCE PRODUCT URL below is the MobileSentrix link. Do NOT modify it and do NOT output it – we keep it unchanged in our system.
-
-SOURCE PRODUCT URL (read-only, do not change): {source_url}
+SOURCE PRODUCT URL (read-only): {source_url}
 
 Product name (EN): {name_en}
-Full description/specs from source (EN): {desc_full}
+Description/specs from source (EN): {desc_full}
+{tags_line}
 Attributes: Model={pa_model or '-'}, Calitate={pa_calitate or '-'}, Brand={pa_brand_piesa or '-'}, Tehnologie={pa_tehnologie or '-'}
 
-Generate Romanian content for our CSV. Adapt the description for SEO (clear, professional). Reply ONLY with these lines, one per line, no other text:
-NAME_RO: <one line, product name in Romanian, SEO-friendly>
-SHORT_DESC_RO: <one line, short description in Romanian, max 160 chars>
-DESC_RO: <adapted full description in Romanian, SEO-friendly; 2-5 sentences or bullet points; use | to separate lines if needed>
-SEO_TITLE: <one line, max 60 chars, for Google>
-SEO_DESC: <one line, max 155 chars, meta description>
-FOCUS_KW: <one word or short phrase for SEO>
+Translate and adapt for our CSV. Keep the structure of the description (e.g. Net Weight, Compatibility, Product size, Speed) when present. Output ONLY these lines, one per line:
+NAME_RO: <one line, product name in Romanian, SEO-friendly, grammatically correct>
+SHORT_DESC_RO: <one line, short description in Romanian, max 160 chars, fluent>
+DESC_RO: <full description in Romanian; KEEP structure (Greutate netă, Compatibilitate, Dimensiuni, Viteză etc.); use | for line breaks; grammatically correct>
+SEO_TITLE: <one line, max 60 chars>
+SEO_DESC: <one line, max 155 chars>
+FOCUS_KW: <one short phrase for SEO>
 TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură>
-TAGS_RO: <comma-separated tags in Romanian for this product, max 10 tags>"""
+TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g. wholesale screwdrivers -> șurubelnițe en-gros); otherwise suggest max 6 short tags; comma-separated, max 8 tags, grammatically correct Romanian>"""
         try:
             r = requests.post(
                 url,
@@ -1651,7 +1651,8 @@ TAGS_RO: <comma-separated tags in Romanian for this product, max 10 tags>"""
                     if ollama_ok:
                         ollama_data = self.ollama_generate_product_fields(
                             source_url, clean_name, description_for_longtail,
-                            pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie
+                            pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie,
+                            product.get('tags', '')
                         )
                     if ollama_data:
                         longtail_title = self.curata_text(ollama_data.get('name_ro', '')) or clean_name
@@ -1899,10 +1900,10 @@ TAGS_RO: <comma-separated tags in Romanian for this product, max 10 tags>"""
                         seo_keyword = self.generate_focus_keyword(original_name, pa_model)
                     self.log(f"   🔍 SEO: {seo_title[:60]}...", "INFO")
 
-                    # True Tone și IC transferabil doar pentru ecrane (LCD/OLED). La restul nu populăm.
-                    # IC transferabil și True Tone: OFF la toate produsele (nu pune la orice)
-                    ic_movable_val = 'false'
-                    truetone_val = 'false'
+                    # IC Movable & TrueTone: mereu OFF (0) la upload – utilizatorul setează manual "Da" dacă e cazul
+                    # ACF: 0 = Nu / off, 1 = Da / on
+                    ic_movable_val = '0'
+                    truetone_val = '0'
 
                     # Tags: din Ollama (TAGS_RO) sau traducere tag-uri existente (EN → RO)
                     if ollama_data and ollama_data.get('tags_ro'):
@@ -2214,9 +2215,49 @@ TAGS_RO: <comma-separated tags in Romanian for this product, max 10 tags>"""
             for desc_sel in desc_selectors:
                 desc_elem = product_soup.select_one(desc_sel)
                 if desc_elem:
-                    description = desc_elem.get_text(strip=True)
-                    if description:
+                    description = desc_elem.get_text(separator='\n', strip=True)
+                    if description and len(description) > 30:
                         break
+
+            # Fallback MobileSentrix: caută blocul "Product Description" (Net Weight, Compatibility, Product size, Speed)
+            if not description or len(description) < 50:
+                for elem in product_soup.find_all(string=re.compile(r'Product Description|Net Weight|Compatibility|Product size|Speed:', re.I)):
+                    parent = elem.parent
+                    for _ in range(8):
+                        if not parent or not getattr(parent, 'name', None):
+                            break
+                        text = parent.get_text(separator='\n', strip=True)
+                        if ('Net Weight' in text or 'Compatibility' in text or 'Product size' in text) and 40 < len(text) < 3000:
+                            description = text
+                            self.log(f"   📄 Descriere găsită din bloc (Net Weight/Compatibility)", "INFO")
+                            break
+                        parent = getattr(parent, 'parent', None)
+                    if description and len(description) > 50:
+                        break
+
+            # Fallback regex pe textul paginii: extrage specificații (Net Weight, Compatibility, Product size, Speed)
+            if not description or len(description) < 50:
+                page_text = product_soup.get_text(separator='\n')
+                spec_parts = []
+                # Net Weight: 350g sau Weight: 350g
+                m = re.search(r'(?:Net\s+Weight|Weight)[\s:]*([^\n]{2,80})', page_text, re.I)
+                if m:
+                    spec_parts.append('Net Weight: ' + m.group(1).strip())
+                # Compatibility: ...
+                m = re.search(r'Compatibility[\s:]*([^\n]{5,400})', page_text, re.I)
+                if m:
+                    spec_parts.append('Compatibility: ' + m.group(1).strip())
+                # Product size: 124*130.5*42mm
+                m = re.search(r'Product\s+size[\s:]*([^\n]{3,120})', page_text, re.I)
+                if m:
+                    spec_parts.append('Product size: ' + m.group(1).strip())
+                # Speed: 200 r/min
+                m = re.search(r'Speed[\s:]*([^\n]{2,60})', page_text, re.I)
+                if m:
+                    spec_parts.append('Speed: ' + m.group(1).strip())
+                if spec_parts:
+                    description = (product_name + '. ' + ' '.join(spec_parts)).strip()
+                    self.log(f"   📄 Descriere extrasă prin regex (specs din pagină)", "INFO")
             
             # Curăță descrierea de text garbage
             import re
@@ -2538,23 +2579,58 @@ TAGS_RO: <comma-separated tags in Romanian for this product, max 10 tags>"""
                 generated_sku = sku_base
                 self.log(f"   ✓ SKU generat din URL: {generated_sku}", "INFO")
             
-            # Tag-uri: mai întâi din pagină (rubrica MobileSentrix), apoi fallback din nume
+            # Tag-uri: mai întâi din pagină (rubrica MobileSentrix: "Tag" → wholesale screwdrivers, cell phone screwdriver supplier)
             tags = []
             tag_selectors = [
                 '.product-tags a', '.tags a', '[data-label="Tags"] a',
                 '.product-info-tags a', '.product-details-tags a', '.item-tags a',
-                'a[href*="/tag/"]', '.tag-list a'
+                'a[href*="/tag/"]', '.tag-list a', '.product-info-main a[href*="tag"]',
+                'div.product-info a[href*="catalogsearch"]'
             ]
             for tag_sel in tag_selectors:
                 tag_elems = product_soup.select(tag_sel)
                 if tag_elems:
                     for t in tag_elems:
                         txt = t.get_text(strip=True)
-                        if txt and len(txt) > 1 and txt not in tags:
+                        if txt and 2 < len(txt) < 80 and txt.lower() not in [x.lower() for x in tags]:
                             tags.append(txt)
                     if tags:
                         self.log(f"   🏷️ Tag-uri extrase din pagină: {len(tags)}", "INFO")
                         break
+            # Fallback: caută secțiunea "Tag" (heading) și linkurile din ea (ex. wholesale screwdrivers)
+            if not tags:
+                tag_heading = product_soup.find(string=re.compile(r'^\s*Tag\s*$', re.I))
+                if tag_heading:
+                    container = tag_heading.find_parent(['div', 'section', 'li']) or tag_heading.find_parent('div')
+                    if container:
+                        for a in container.find_all('a', limit=15):
+                            txt = a.get_text(strip=True)
+                            if txt and 2 < len(txt) < 80 and txt not in tags:
+                                tags.append(txt)
+                        if tags:
+                            self.log(f"   🏷️ Tag-uri din secțiunea Tag: {len(tags)}", "INFO")
+
+            # MobileSentrix: tag-urile sunt heading-uri (h3/h4), nu link-uri – ex: "wholesale screwdrivers", "cell phone screwdriver supplier"
+            if not tags:
+                tag_blocklist = (
+                    'sku', 'product description', 'add to cart', 'rating', 'ex. vat', 'inc. vat',
+                    'related products', 'core return', 'choose your country', 'quantity', 'copy',
+                    'share', 'ship', 'price match', 'easy refunds', 'returns', 'do you want',
+                    'log in', 'contact us', 'learn more', 'important', 'information', 'cancel',
+                    'submit', 'close', 'yes', 'no', 'ok', 'welcome', 'remember my selection',
+                    'speed', 'r/min', 'net weight', 'compatibility', 'product size'
+                )
+                product_main = product_soup.select_one('.product-info-main, .column.main, main, [class*="product-detail"]') or product_soup
+                for head in product_main.select('h3, h4, h5'):
+                    txt = head.get_text(strip=True)
+                    if txt and 3 <= len(txt) <= 80:
+                        low = txt.lower()
+                        if low not in tag_blocklist and not any(skip in low for skip in ('sku ', 'product ', 'add to', 'rating', 'vat', 'related', 'return', 'country', 'quantity', 'copy', 'share')):
+                                if txt not in tags and low not in [t.lower() for t in tags]:
+                                tags.append(txt)
+                if tags:
+                    tags = tags[:12]  # max 12 tag-uri din heading-uri
+                    self.log(f"   🏷️ Tag-uri din heading-uri (h3/h4/h5): {len(tags)}", "INFO")
 
             product_name_lower = product_name.lower()
             if not tags:
