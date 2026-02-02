@@ -37,15 +37,16 @@ class ImportProduse:
         self.root.geometry("900x700")
         self.root.resizable(True, True)
         
-        # Variabile
-        self.env_file = Path(".env")
+        # Variabile – .env din același folder cu scriptul (nu din cwd), ca pe Windows să fie găsit mereu
+        self._script_dir = Path(__file__).resolve().parent
+        self.env_file = self._script_dir / ".env"
         self.config = {}
         self.running = False
         
-        # Creare directoare
-        Path("logs").mkdir(exist_ok=True)
-        Path("images").mkdir(exist_ok=True)
-        Path("data").mkdir(exist_ok=True)
+        # Creare directoare (în folderul scriptului)
+        (self._script_dir / "logs").mkdir(exist_ok=True)
+        (self._script_dir / "images").mkdir(exist_ok=True)
+        (self._script_dir / "data").mkdir(exist_ok=True)
         
         # Load config
         self.load_config()
@@ -215,7 +216,7 @@ class ImportProduse:
         ttk.Button(btn_frame, text="🗑 Șterge Log", 
                   command=lambda: self.log_text.delete(1.0, tk.END)).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="📁 Deschide Folder Logs", 
-                  command=lambda: os.startfile("logs")).pack(side='left', padx=5)
+                  command=lambda: os.startfile(str(self._script_dir / "logs"))).pack(side='left', padx=5)
         
     def log(self, message, level='INFO'):
         """Adaugă mesaj în log"""
@@ -370,6 +371,12 @@ class ImportProduse:
                 print(f"✗ Eroare la încărcarea config: {e}")
         else:
             print("ℹ Fișierul .env nu există, folosim valori default")
+        # Debug: arată dacă Ollama e configurat (pentru loguri pe Windows)
+        ollama_url = self.config.get('OLLAMA_URL', '')
+        if ollama_url:
+            print(f"✓ Ollama din .env: {ollama_url}")
+        else:
+            print("ℹ OLLAMA_URL gol în .env – traducere doar prin Google Translate")
         
     def save_config(self):
         """Salvează configurația în .env"""
@@ -1065,9 +1072,13 @@ class ImportProduse:
     
     def start_import(self):
         """Pornește importul"""
-        if not Path(self.sku_file_var.get()).exists():
+        sku_path = Path(self.sku_file_var.get())
+        if not sku_path.exists() and not sku_path.is_absolute():
+            sku_path = self._script_dir / self.sku_file_var.get()
+        if not sku_path.exists():
             messagebox.showerror("Eroare", f"Fișierul {self.sku_file_var.get()} nu există!")
             return
+        self._resolved_sku_file = str(sku_path)
         
         self.running = True
         self.btn_start.config(state='disabled')
@@ -1094,8 +1105,8 @@ class ImportProduse:
             self.log(f"🚀 START PROCESARE PRODUSE (Mod: CSV WebGSM + Upload Imagini)", "INFO")
             self.log("=" * 70, "INFO")
 
-            # Citește SKU-uri
-            skus = self.read_sku_file(self.sku_file_var.get())
+            # Citește SKU-uri (cale rezolvată în folderul scriptului)
+            skus = self.read_sku_file(getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get())
             self.log(f"📋 Găsite {len(skus)} SKU-uri pentru procesare", "INFO")
 
             success_count = 0
@@ -1177,7 +1188,7 @@ class ImportProduse:
 
             # Deschide folderul data cu CSV-ul
             if csv_path:
-                os.startfile(Path("data"))
+                os.startfile(str(self._script_dir / "data"))
 
         except Exception as e:
             self.log(f"✗ Eroare critică: {e}", "ERROR")
@@ -1209,6 +1220,8 @@ class ImportProduse:
         """Încarcă reguli de categorii (keyword | categorie) din fișier configurabil."""
         rules = []
         path = Path(filepath)
+        if not path.exists():
+            path = self._script_dir / filepath
         if not path.exists():
             return rules
         with open(path, 'r', encoding='utf-8') as f:
@@ -1500,7 +1513,7 @@ class ImportProduse:
         import csv
 
         try:
-            csv_path = Path("data") / filename
+            csv_path = self._script_dir / "data" / filename
             self.log(f"📄 Creez fișier CSV WebGSM: {csv_path}", "INFO")
             self.log(f"⏳ Procesez {len(products_data)} produse cu upload imagini pe WordPress...", "INFO")
 
@@ -1553,6 +1566,8 @@ class ImportProduse:
                         else:
                             self.log(f"   🤖 Ollama: {clean_name} → {clean_name_ro}", "INFO")
                     else:
+                        if tip_ro == 'Componentă':
+                            self.log("   ⚠ Tip Componentă dar Ollama nu e folosit (OLLAMA_URL gol în .env?)", "WARNING")
                         clean_name_ro = self.translate_text(clean_name, source='en', target='ro')
                         self.log(f"   🌍 Titlu tradus: {clean_name} → {clean_name_ro}", "INFO")
                     pa_model = product.get('pa_model', '')
@@ -1574,7 +1589,7 @@ class ImportProduse:
                     if product.get('images'):
                         # Redenumire imagini cu nume SEO (titlu tradus sau caracteristici produs)
                         seo_title = longtail_title if (longtail_title and len(self.normalize_text(longtail_title)) >= 3) else ' '.join(filter(None, [tip_ro, pa_model, pa_tehnologie, pa_calitate])) or 'produs'
-                        images_dir = Path("images")
+                        images_dir = self._script_dir / "images"
                         for img_idx, img in enumerate(product['images']):
                             if isinstance(img, dict) and 'local_path' in img:
                                 old_path = Path(img['local_path'])
@@ -1897,7 +1912,7 @@ class ImportProduse:
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
                 # ===== DEBUG: Salvează HTML pentru inspecție =====
-                debug_file = Path("logs") / f"debug_search_{search_sku}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                debug_file = self._script_dir / "logs" / f"debug_search_{search_sku}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
                 with open(debug_file, 'w', encoding='utf-8') as f:
                     f.write(soup.prettify())
                 self.log(f"   📝 HTML căutare salvat: {debug_file}", "INFO")
@@ -1932,7 +1947,7 @@ class ImportProduse:
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
                 # ===== DEBUG: Salvează HTML pentru inspecție =====
-                debug_file = Path("logs") / f"debug_search_{ean}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                debug_file = self._script_dir / "logs" / f"debug_search_{ean}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
                 with open(debug_file, 'w', encoding='utf-8') as f:
                     f.write(soup.prettify())
                 self.log(f"   📝 HTML salvat în: {debug_file}", "INFO")
@@ -2006,7 +2021,7 @@ class ImportProduse:
             product_page_html = str(product_soup)
             
             # ===== DEBUG: Salvează HTML produsului =====
-            debug_product_file = Path("logs") / f"debug_product_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            debug_product_file = self._script_dir / "logs" / f"debug_product_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             with open(debug_product_file, 'w', encoding='utf-8') as f:
                 f.write(product_soup.prettify())
             self.log(f"   📝 HTML produs salvat: {debug_product_file}", "INFO")
@@ -2218,7 +2233,7 @@ class ImportProduse:
                                 img = img.convert('RGBA')
                             img_extension = 'webp'
                             img_filename = f"{product_id}_{idx}.{img_extension}"
-                            img_path = Path("images") / img_filename
+                            img_path = self._script_dir / "images" / img_filename
                             img.save(img_path, 'WEBP', quality=90)
                         else:
                             # Fără transparență → JPEG (cel mai mic)
@@ -2226,7 +2241,7 @@ class ImportProduse:
                                 img = img.convert('RGB')
                             img_extension = 'jpg'
                             img_filename = f"{product_id}_{idx}.{img_extension}"
-                            img_path = Path("images") / img_filename
+                            img_path = self._script_dir / "images" / img_filename
                             img.save(img_path, 'JPEG', quality=85, optimize=True)
                         file_size = img_path.stat().st_size / (1024 * 1024)
 
