@@ -2626,7 +2626,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     if txt and 3 <= len(txt) <= 80:
                         low = txt.lower()
                         if low not in tag_blocklist and not any(skip in low for skip in ('sku ', 'product ', 'add to', 'rating', 'vat', 'related', 'return', 'country', 'quantity', 'copy', 'share')):
-                                if txt not in tags and low not in [t.lower() for t in tags]:
+                            if txt not in tags and low not in [t.lower() for t in tags]:
                                 tags.append(txt)
                 if tags:
                     tags = tags[:12]  # max 12 tag-uri din heading-uri
