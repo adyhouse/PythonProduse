@@ -732,6 +732,10 @@ class ImportProduse:
                 if not model:
                     model = model_raw.title()
 
+        # Fallback final: extract_phone_model() pentru iPhone/Galaxy neacoperite de listă
+        if not model:
+            model = self.extract_phone_model(product_name)
+
         # CALITATE (Logică WebGSM: Genuine OEM -> Service Pack, Used OEM Pull -> Original din Dezmembrări)
         calitate = 'Aftermarket'
         if 'used oem pull' in text or 'oem pull' in text:
@@ -874,6 +878,113 @@ class ImportProduse:
         if brand:
             return f"{tip}-{brand}"
         return tip
+
+    def get_woo_category(self, product_name, product_type=''):
+        """
+        Returnează categoria WooCommerce în format ierarhic (max 2 nivele).
+        WebGSM: Brand > Tip Piesă. Atributele (Model, Calitate, Brand Piesa) sunt pentru filtrare, nu categorii.
+
+        Args:
+            product_name: Numele produsului (ex: "Baterie pentru iPhone 14 Pro")
+            product_type: Tipul din descriere/titlu RO (ex: "Baterie", "Ecran")
+
+        Returns:
+            String format "Parent > Child" (ex: "Piese iPhone > Baterii iPhone")
+        """
+        name_lower = (product_name or '').lower()
+        type_lower = (product_type or '').lower()
+        combined = name_lower + ' ' + type_lower
+
+        brand_parent = ''
+        brand_suffix = ''
+
+        if 'iphone' in name_lower or 'apple' in name_lower:
+            brand_parent = 'Piese iPhone'
+            brand_suffix = 'iPhone'
+        elif 'samsung' in name_lower or 'galaxy' in name_lower:
+            brand_parent = 'Piese Samsung'
+            brand_suffix = 'Samsung'
+        elif 'huawei' in name_lower or 'honor' in name_lower:
+            brand_parent = 'Piese Huawei'
+            brand_suffix = 'Huawei'
+        elif 'xiaomi' in name_lower or 'redmi' in name_lower or 'poco' in name_lower:
+            brand_parent = 'Piese Xiaomi'
+            brand_suffix = 'Xiaomi'
+        elif 'google' in name_lower or 'pixel' in name_lower:
+            brand_parent = 'Piese Google'
+            brand_suffix = 'Google'
+        elif 'oneplus' in name_lower:
+            brand_parent = 'Piese OnePlus'
+            brand_suffix = 'OnePlus'
+        elif 'motorola' in name_lower or 'moto ' in name_lower:
+            brand_parent = 'Piese Motorola'
+            brand_suffix = 'Motorola'
+        elif 'ipad' in name_lower:
+            brand_parent = 'Piese iPad'
+            brand_suffix = 'iPad'
+
+        if brand_parent:
+            if any(x in combined for x in ['ecran', 'display', 'lcd', 'oled', 'screen']):
+                return f'{brand_parent} > Ecrane {brand_suffix}'
+            elif any(x in combined for x in ['baterie', 'battery', 'acumulator']):
+                return f'{brand_parent} > Baterii {brand_suffix}'
+            elif any(x in combined for x in ['mufa', 'charging port', 'dock', 'usb-c', 'lightning', 'conector încărcare']):
+                return f'{brand_parent} > Mufe Încărcare {brand_suffix}'
+            elif any(x in combined for x in ['camera', 'cameră', 'lens']):
+                return f'{brand_parent} > Camere {brand_suffix}'
+            elif any(x in combined for x in ['flex', 'cable', 'cablu']):
+                return f'{brand_parent} > Flexuri {brand_suffix}'
+            elif any(x in combined for x in ['casca', 'speaker', 'earpiece', 'difuzor']):
+                return f'{brand_parent} > Difuzoare {brand_suffix}'
+            elif any(x in combined for x in ['buton', 'button', 'power', 'volume', 'home']):
+                return f'{brand_parent} > Butoane {brand_suffix}'
+            elif any(x in combined for x in ['sticla', 'glass', 'geam']):
+                return f'{brand_parent} > Sticlă {brand_suffix}'
+            elif any(x in combined for x in ['carcasa', 'housing', 'frame', 'back cover', 'back glass']):
+                return f'{brand_parent} > Carcase {brand_suffix}'
+            else:
+                return f'{brand_parent} > Alte Piese {brand_suffix}'
+
+        # Accesorii Service (fără brand telefon)
+        if any(x in combined for x in ['unealta', 'tool', 'surubelnita', 'șurubelniță', 'pry', 'tweezer', 'screwdriver']):
+            return 'Accesorii Service > Unelte'
+        elif any(x in combined for x in ['statie', 'station', 'preheater', 'microscop', 'separator', 'tester', 'diagnostic']):
+            return 'Accesorii Service > Echipamente'
+        elif any(x in combined for x in ['adeziv', 'banda', 'tape', 'oca', 'loca', 'consumabil']):
+            return 'Accesorii Service > Consumabile'
+        else:
+            return 'Accesorii Service'
+
+    def extract_phone_model(self, product_name):
+        """
+        Extrage modelul telefonului pentru atributul pa_model (Model Compatibil).
+        Folosit ca fallback când extract_product_attributes nu găsește un model din listă.
+
+        Returns:
+            String cu modelul (ex: "iPhone 14 Pro Max") sau "" dacă nu găsește
+        """
+        name = product_name or ''
+        # iPhone: iPhone 17 Pro Max, iPhone 14, etc.
+        iphone_pattern = r'iPhone\s*(\d+)\s*(Pro\s*Max|Pro|Plus|Mini|Air)?'
+        match = re.search(iphone_pattern, name, re.IGNORECASE)
+        if match:
+            model = f'iPhone {match.group(1)}'
+            if match.group(2):
+                model += f' {match.group(2)}'
+            return model.strip()
+        # Samsung Galaxy: Galaxy S24 Ultra, Galaxy A54, etc.
+        galaxy_pattern = r'Galaxy\s*(S|A|Z|Note|M)?\s*(\d+)\s*(Ultra|Plus|\+|FE|Fold|Flip)?'
+        match = re.search(galaxy_pattern, name, re.IGNORECASE)
+        if match:
+            model = 'Galaxy'
+            if match.group(1):
+                model += f' {match.group(1)}{match.group(2)}'
+            else:
+                model += f' {match.group(2)}'
+            if match.group(3):
+                model += f' {match.group(3)}'
+            return model.strip()
+        return ''
 
     def extract_compatibility_codes(self, description):
         """
@@ -1259,11 +1370,11 @@ class ImportProduse:
         text = f"{product_name} {category}".lower()
         
         # 12 luni - Display/LCD
-        if any(x in text for x in ['display', 'lcd', 'ecran', 'screen']):
+        if any(x in text for x in ['display', 'lcd', 'ecran', 'ecrane', 'screen']):
             return "12 luni"
         
         # 6 luni - Acumulatori/Baterii
-        if any(x in text for x in ['acumulator', 'baterie', 'battery', 'baterija']):
+        if any(x in text for x in ['acumulator', 'baterie', 'baterii', 'battery', 'baterija']):
             return "6 luni"
         
         # 6 luni - Cabluri Flex
@@ -1271,7 +1382,7 @@ class ImportProduse:
             return "6 luni"
         
         # 3 luni - Carcase
-        if any(x in text for x in ['carcasa', 'casing', 'housing', 'case back']):
+        if any(x in text for x in ['carcasa', 'carcase', 'casing', 'housing', 'case back']):
             return "3 luni"
         
         # 1-3 luni - Accesorii (default)
@@ -1867,7 +1978,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     sku_furnizor = product.get('sku_furnizor', product.get('sku', ''))
 
                     # Detectează garanția (număr luni)
-                    warranty_text = self.detect_warranty(clean_name_ro, product.get('category_path', ''))
+                    warranty_text = self.detect_warranty(clean_name_ro, self.get_woo_category(clean_name, tip_ro))
                     # Convertește "12 luni" -> 12, "6 luni" -> 6, etc.
                     warranty_months = re.search(r'(\d+)', warranty_text)
                     warranty_months = warranty_months.group(1) if warranty_months else '12'
@@ -1895,10 +2006,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
 
-                    # Categorii: folosește slug WebGSM
-                    category_slug = product.get('category_slug', '')
-                    # Păstrează și categoria ierarhică dacă slug-ul e gol
-                    categories = category_slug if category_slug else product.get('category_path', '')
+                    # Categorii: format ierarhic max 2 nivele (Brand > Tip Piesă) – pentru filtrare se folosesc atributele
+                    categories = self.get_woo_category(clean_name, tip_ro)
 
                     # SEO Rank Math: din Ollama dacă avem, altfel funcții interne
                     if ollama_data:
