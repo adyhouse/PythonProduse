@@ -752,6 +752,10 @@ class ImportProduse:
         # BRAND PIESA - extragere din titlul original (EN): Ampsentrix, JK, ZY, GX, Hex, Genuine
         brand_piesa = ''
         brand_patterns = [
+            ('Qianli', ['qianli', '(qianli)']),
+            ('iBridge', ['ibridge']),
+            ('Mijia', ['mijia']),
+            ('Xiaomi', ['xiaomi', '(xiaomi)']),
             ('Ampsentrix', ['ampsentrix']),
             ('JK', [' jk ', ' jk-', '(jk)', 'jk incell', 'jk soft']),
             ('ZY', [' zy ', ' zy-', '(zy)', 'zy soft']),
@@ -1462,16 +1466,16 @@ class ImportProduse:
 
     def ollama_generate_product_fields(self, source_url, name_en, description_en, pa_model, pa_calitate, pa_brand_piesa, pa_tehnologie):
         """
-        Generează toate câmpurile text pentru CSV (nume, descriere scurtă, SEO) prin Ollama.
+        Generează toate câmpurile text pentru CSV (nume, descriere lungă, scurtă, SEO) prin Ollama.
         source_url este DOAR pentru context – nu se modifică niciodată; rămâne link-ul MobileSentrix.
-        Returnează dict: name_ro, short_desc_ro, seo_title, seo_desc, focus_kw, tip_produs sau None la eșec.
+        Returnează dict: name_ro, short_desc_ro, desc_ro, seo_title, seo_desc, focus_kw, tip_produs, tags_ro.
         """
         base_url = self.config.get('OLLAMA_URL', '').strip()
         if not base_url:
             return None
         model = self.config.get('OLLAMA_MODEL', 'llama3.2') or 'llama3.2'
         url = f"{base_url.rstrip('/')}/api/generate"
-        desc_snippet = (description_en or '')[:400].replace('\n', ' ')
+        desc_full = (description_en or '')[:2000].replace('\n', ' ')
         prompt = f"""You are a product data specialist for a Romanian e-commerce site (WebGSM) selling phone parts and accessories.
 
 IMPORTANT: The SOURCE PRODUCT URL below is the MobileSentrix link. Do NOT modify it and do NOT output it – we keep it unchanged in our system.
@@ -1479,21 +1483,23 @@ IMPORTANT: The SOURCE PRODUCT URL below is the MobileSentrix link. Do NOT modify
 SOURCE PRODUCT URL (read-only, do not change): {source_url}
 
 Product name (EN): {name_en}
-Description excerpt (EN): {desc_snippet}
+Full description/specs from source (EN): {desc_full}
 Attributes: Model={pa_model or '-'}, Calitate={pa_calitate or '-'}, Brand={pa_brand_piesa or '-'}, Tehnologie={pa_tehnologie or '-'}
 
-Generate Romanian content for our CSV. Reply ONLY with these lines, one per line, no other text:
+Generate Romanian content for our CSV. Adapt the description for SEO (clear, professional). Reply ONLY with these lines, one per line, no other text:
 NAME_RO: <one line, product name in Romanian, SEO-friendly>
 SHORT_DESC_RO: <one line, short description in Romanian, max 160 chars>
+DESC_RO: <adapted full description in Romanian, SEO-friendly; 2-5 sentences or bullet points; use | to separate lines if needed>
 SEO_TITLE: <one line, max 60 chars, for Google>
 SEO_DESC: <one line, max 155 chars, meta description>
 FOCUS_KW: <one word or short phrase for SEO>
-TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură>"""
+TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură>
+TAGS_RO: <comma-separated tags in Romanian for this product, max 10 tags>"""
         try:
             r = requests.post(
                 url,
                 json={"model": model, "prompt": prompt, "stream": False},
-                timeout=90
+                timeout=120
             )
             r.raise_for_status()
             out = r.json().get("response", "").strip()
@@ -1501,20 +1507,35 @@ TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, �
                 return None
             out = self.fix_romanian_diacritics(out)
             result = {}
+            desc_ro_lines = []
+            in_desc_ro = False
+            key_prefixes = ("NAME_RO:", "SHORT_DESC_RO:", "DESC_RO:", "SEO_TITLE:", "SEO_DESC:", "FOCUS_KW:", "TIP_PRODUS:", "TAGS_RO:")
             for line in out.splitlines():
-                line = line.strip()
-                if line.startswith("NAME_RO:"):
-                    result["name_ro"] = line[8:].strip()
-                elif line.startswith("SHORT_DESC_RO:"):
-                    result["short_desc_ro"] = line[14:].strip()[:160]
-                elif line.startswith("SEO_TITLE:"):
-                    result["seo_title"] = line[10:].strip()[:60]
-                elif line.startswith("SEO_DESC:"):
-                    result["seo_desc"] = line[9:].strip()[:160]
-                elif line.startswith("FOCUS_KW:"):
-                    result["focus_kw"] = line[9:].strip()
-                elif line.startswith("TIP_PRODUS:"):
-                    result["tip_produs"] = line[11:].strip()
+                line_stripped = line.strip()
+                if line_stripped.startswith("NAME_RO:"):
+                    in_desc_ro = False
+                    result["name_ro"] = line_stripped[8:].strip()
+                elif line_stripped.startswith("SHORT_DESC_RO:"):
+                    in_desc_ro = False
+                    result["short_desc_ro"] = line_stripped[14:].strip()[:160]
+                elif line_stripped.startswith("DESC_RO:"):
+                    in_desc_ro = True
+                    desc_ro_lines = [line_stripped[8:].strip()]
+                elif in_desc_ro and not any(line_stripped.startswith(p) for p in key_prefixes if p != "DESC_RO:"):
+                    desc_ro_lines.append(line_stripped)
+                elif line_stripped.startswith("SEO_TITLE:"):
+                    in_desc_ro = False
+                    result["seo_title"] = line_stripped[10:].strip()[:60]
+                elif line_stripped.startswith("SEO_DESC:"):
+                    result["seo_desc"] = line_stripped[9:].strip()[:160]
+                elif line_stripped.startswith("FOCUS_KW:"):
+                    result["focus_kw"] = line_stripped[9:].strip()
+                elif line_stripped.startswith("TIP_PRODUS:"):
+                    result["tip_produs"] = line_stripped[11:].strip()
+                elif line_stripped.startswith("TAGS_RO:"):
+                    result["tags_ro"] = line_stripped[8:].strip()[:500]
+            if desc_ro_lines:
+                result["desc_ro"] = " ".join(desc_ro_lines).replace("|", "\n").strip()[:3000]
             if result.get("name_ro"):
                 return result
         except Exception as e:
@@ -1795,7 +1816,11 @@ TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, �
                         self.curata_text(pa_tehnologie) if pa_tehnologie else '-',
                         self.curata_text(tip_ro) if tip_ro else '-'
                     )
-                    clean_desc_ro = fisa_tehnica_html
+                    # Description: descriere adaptată (Ollama) + tabel specificații tehnice
+                    if ollama_data and ollama_data.get('desc_ro'):
+                        clean_desc_ro = '<p>' + self.curata_text(ollama_data['desc_ro']).replace('\n', '</p><p>') + '</p>\n\n' + fisa_tehnica_html
+                    else:
+                        clean_desc_ro = fisa_tehnica_html
 
                     # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
                     sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
@@ -1875,16 +1900,24 @@ TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, �
                     self.log(f"   🔍 SEO: {seo_title[:60]}...", "INFO")
 
                     # True Tone și IC transferabil doar pentru ecrane (LCD/OLED). La restul nu populăm.
-                    is_screen_product = (tip_ro == 'Ecran' or bool(pa_tehnologie))
-                    ic_movable_val = product.get('ic_movable', 'false') if is_screen_product else 'false'
-                    truetone_val = product.get('truetone_support', 'false') if is_screen_product else 'false'
+                    # IC transferabil și True Tone: OFF la toate produsele (nu pune la orice)
+                    ic_movable_val = 'false'
+                    truetone_val = 'false'
+
+                    # Tags: din Ollama (TAGS_RO) sau traducere tag-uri existente (EN → RO)
+                    if ollama_data and ollama_data.get('tags_ro'):
+                        tags_value = self.curata_text(ollama_data['tags_ro'].strip())[:500]
+                    else:
+                        tags_value = product.get('tags', '')
+                        if tags_value:
+                            tags_value = self.translate_text(tags_value, source='en', target='ro')
 
                     row = {
                         'ID': '',
                         'Type': 'simple',
                         'SKU': sku_value,
                         'Name': longtail_title,
-                        'Published': '1',
+                        'Published': '0',  # Draft/Pending – utilizatorul publică manual după review
                         'Is featured?': '0',
                         'Visibility in catalog': 'visible',
                         'Short description': short_description,
@@ -1895,7 +1928,7 @@ TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, �
                         'Stock': product.get('stock', '100'),
                         'Regular price': f"{price_ron:.2f}",
                         'Categories': categories,
-                        'Tags': product.get('tags', ''),
+                        'Tags': tags_value,
                         'Images': all_images,
                         'Parent': '',
                         # ATRIBUT 1: Model Compatibil
@@ -2200,12 +2233,30 @@ TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, �
                     continue
                 clean_lines.append(line)
             
-            description = ' '.join(clean_lines)[:1000]  # Max 1000 caractere
-            
+            description = ' '.join(clean_lines)[:3000]  # Descriere completă pentru Ollama/SEO
+
+            # Încearcă să extragi și blocul de specificații tehnice (tabel / listă)
+            spec_selectors = [
+                '.product.attribute.overview .value',
+                '.additional-attributes table',
+                '.data.table',
+                '[itemprop="description"] table',
+                '.product-info-description table',
+                '.specifications',
+                '.product-attachments'
+            ]
+            for spec_sel in spec_selectors:
+                spec_elem = product_soup.select_one(spec_sel)
+                if spec_elem:
+                    spec_text = spec_elem.get_text(separator=' | ', strip=True)[:1500]
+                    if spec_text and len(spec_text) > 20:
+                        description = (description + "\n\nSpecificații: " + spec_text).strip()[:3500]
+                        break
+
             # Elimină URL-uri și alte caractere speciale
             description = re.sub(r'https?://\S+', '', description).strip()
             description = re.sub(r'\s+', ' ', description)  # Normalizează whitespace
-            
+
             if not description:
                 description = f"Produs {product_name}"
             
@@ -2487,124 +2538,132 @@ TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, �
                 generated_sku = sku_base
                 self.log(f"   ✓ SKU generat din URL: {generated_sku}", "INFO")
             
-            # Tag-uri din categorii (extrage din nume și descriere)
+            # Tag-uri: mai întâi din pagină (rubrica MobileSentrix), apoi fallback din nume
             tags = []
-            
-            # Informații din titlu
+            tag_selectors = [
+                '.product-tags a', '.tags a', '[data-label="Tags"] a',
+                '.product-info-tags a', '.product-details-tags a', '.item-tags a',
+                'a[href*="/tag/"]', '.tag-list a'
+            ]
+            for tag_sel in tag_selectors:
+                tag_elems = product_soup.select(tag_sel)
+                if tag_elems:
+                    for t in tag_elems:
+                        txt = t.get_text(strip=True)
+                        if txt and len(txt) > 1 and txt not in tags:
+                            tags.append(txt)
+                    if tags:
+                        self.log(f"   🏷️ Tag-uri extrase din pagină: {len(tags)}", "INFO")
+                        break
+
             product_name_lower = product_name.lower()
-            
-            # Brand
-            if 'apple' in product_name_lower:
-                tags.append('Apple')
-            if 'samsung' in product_name_lower:
-                tags.append('Samsung')
-            if 'motorola' in product_name_lower:
-                tags.append('Motorola')
-            if 'google' in product_name_lower or 'pixel' in product_name_lower:
-                tags.append('Google Pixel')
-            if 'oneplus' in product_name_lower:
-                tags.append('OnePlus')
-            if 'xiaomi' in product_name_lower:
-                tags.append('Xiaomi')
-            if 'huawei' in product_name_lower:
-                tags.append('Huawei')
-            
-            # Tip dispozitiv
-            if 'iphone' in product_name_lower:
-                tags.append('iPhone')
-            if 'ipad' in product_name_lower:
-                tags.append('iPad')
-            if 'watch' in product_name_lower or 'apple watch' in product_name_lower:
-                tags.append('Apple Watch')
-            if 'macbook' in product_name_lower:
-                tags.append('MacBook')
-            if 'galaxy' in product_name_lower:
-                tags.append('Samsung Galaxy')
-            
-            # Model specific
-            if 'pro max' in product_name_lower:
-                tags.append('Pro Max')
-            if 'pro' in product_name_lower and 'pro max' not in product_name_lower:
-                tags.append('Pro')
-            if 'air' in product_name_lower:
-                tags.append('Air')
-            if 'mini' in product_name_lower:
-                tags.append('Mini')
-            if 'ultra' in product_name_lower:
-                tags.append('Ultra')
-            if 'plus' in product_name_lower:
-                tags.append('Plus')
-            
-            # Versiuni iOS
-            if 'iphone 17' in product_name_lower:
-                tags.append('iPhone 17')
-            if 'iphone 16' in product_name_lower:
-                tags.append('iPhone 16')
-            if 'iphone 15' in product_name_lower:
-                tags.append('iPhone 15')
-            if 'iphone 14' in product_name_lower:
-                tags.append('iPhone 14')
-            if 'iphone 13' in product_name_lower:
-                tags.append('iPhone 13')
-            
-            # Specificații
-            if 'oled' in product_name_lower:
-                tags.append('OLED')
-            if 'lcd' in product_name_lower or 'ips' in product_name_lower:
-                tags.append('LCD')
-            if '120hz' in product_name_lower or '120 hz' in product_name_lower:
-                tags.append('120Hz')
-            if '90hz' in product_name_lower or '90 hz' in product_name_lower:
-                tags.append('90Hz')
-            if '60hz' in product_name_lower or '60 hz' in product_name_lower:
-                tags.append('60Hz')
-            
-            # Tip component
-            if 'assembly' in product_name_lower or 'display' in product_name_lower:
-                tags.append('Display Assembly')
-            if 'screen' in product_name_lower:
-                tags.append('Screen')
-            if 'battery' in product_name_lower:
-                tags.append('Battery')
-            if 'charging' in product_name_lower or 'charger' in product_name_lower:
-                tags.append('Charging')
-            if 'port' in product_name_lower:
-                tags.append('Port')
-            if 'camera' in product_name_lower:
-                tags.append('Camera')
-            if 'speaker' in product_name_lower:
-                tags.append('Speaker')
-            if 'microphone' in product_name_lower:
-                tags.append('Microphone')
-            if 'button' in product_name_lower:
-                tags.append('Button')
-            if 'cable' in product_name_lower:
-                tags.append('Cable')
-            if 'adapter' in product_name_lower:
-                tags.append('Adapter')
-            if 'glass' in product_name_lower:
-                tags.append('Glass')
-            
-            # Calitate
-            if 'genuine' in product_name_lower or 'oem' in product_name_lower:
-                tags.append('Genuine OEM')
-            if 'aftermarket' in product_name_lower:
-                tags.append('Aftermarket')
-            if 'compatible' in product_name_lower:
-                tags.append('Compatible')
-            if 'replacement' in product_name_lower:
-                tags.append('Replacement')
-            if 'original' in product_name_lower:
-                tags.append('Original')
-            if 'premium' in product_name_lower:
-                tags.append('Premium')
-            if 'quality' in product_name_lower:
-                tags.append('Quality')
-            
-            # Elimină duplicatele și ordonează alfabetic
-            tags = list(dict.fromkeys(tags))  # Elimină duplicatele păstrând ordinea
-            tags = sorted(set(tags))  # Apoi sortează alfabetic și elimină orice duplicat rămas
-            
+            if not tags:
+                # Fallback: construiește din nume (vor fi traduse la export)
+                # Brand
+                if 'apple' in product_name_lower:
+                    tags.append('Apple')
+                if 'samsung' in product_name_lower:
+                    tags.append('Samsung')
+                if 'motorola' in product_name_lower:
+                    tags.append('Motorola')
+                if 'google' in product_name_lower or 'pixel' in product_name_lower:
+                    tags.append('Google Pixel')
+                if 'oneplus' in product_name_lower:
+                    tags.append('OnePlus')
+                if 'xiaomi' in product_name_lower:
+                    tags.append('Xiaomi')
+                if 'huawei' in product_name_lower:
+                    tags.append('Huawei')
+                # Tip dispozitiv
+                if 'iphone' in product_name_lower:
+                    tags.append('iPhone')
+                if 'ipad' in product_name_lower:
+                    tags.append('iPad')
+                if 'watch' in product_name_lower or 'apple watch' in product_name_lower:
+                    tags.append('Apple Watch')
+                if 'macbook' in product_name_lower:
+                    tags.append('MacBook')
+                if 'galaxy' in product_name_lower:
+                    tags.append('Samsung Galaxy')
+                # Model specific
+                if 'pro max' in product_name_lower:
+                    tags.append('Pro Max')
+                if 'pro' in product_name_lower and 'pro max' not in product_name_lower:
+                    tags.append('Pro')
+                if 'air' in product_name_lower:
+                    tags.append('Air')
+                if 'mini' in product_name_lower:
+                    tags.append('Mini')
+                if 'ultra' in product_name_lower:
+                    tags.append('Ultra')
+                if 'plus' in product_name_lower:
+                    tags.append('Plus')
+                # Versiuni iOS
+                if 'iphone 17' in product_name_lower:
+                    tags.append('iPhone 17')
+                if 'iphone 16' in product_name_lower:
+                    tags.append('iPhone 16')
+                if 'iphone 15' in product_name_lower:
+                    tags.append('iPhone 15')
+                if 'iphone 14' in product_name_lower:
+                    tags.append('iPhone 14')
+                if 'iphone 13' in product_name_lower:
+                    tags.append('iPhone 13')
+                # Specificații
+                if 'oled' in product_name_lower:
+                    tags.append('OLED')
+                if 'lcd' in product_name_lower or 'ips' in product_name_lower:
+                    tags.append('LCD')
+                if '120hz' in product_name_lower or '120 hz' in product_name_lower:
+                    tags.append('120Hz')
+                if '90hz' in product_name_lower or '90 hz' in product_name_lower:
+                    tags.append('90Hz')
+                if '60hz' in product_name_lower or '60 hz' in product_name_lower:
+                    tags.append('60Hz')
+                # Tip component
+                if 'assembly' in product_name_lower or 'display' in product_name_lower:
+                    tags.append('Display Assembly')
+                if 'screen' in product_name_lower:
+                    tags.append('Screen')
+                if 'battery' in product_name_lower:
+                    tags.append('Battery')
+                if 'charging' in product_name_lower or 'charger' in product_name_lower:
+                    tags.append('Charging')
+                if 'port' in product_name_lower:
+                    tags.append('Port')
+                if 'camera' in product_name_lower:
+                    tags.append('Camera')
+                if 'speaker' in product_name_lower:
+                    tags.append('Speaker')
+                if 'microphone' in product_name_lower:
+                    tags.append('Microphone')
+                if 'button' in product_name_lower:
+                    tags.append('Button')
+                if 'cable' in product_name_lower:
+                    tags.append('Cable')
+                if 'adapter' in product_name_lower:
+                    tags.append('Adapter')
+                if 'glass' in product_name_lower:
+                    tags.append('Glass')
+                # Calitate
+                if 'genuine' in product_name_lower or 'oem' in product_name_lower:
+                    tags.append('Genuine OEM')
+                if 'aftermarket' in product_name_lower:
+                    tags.append('Aftermarket')
+                if 'compatible' in product_name_lower:
+                    tags.append('Compatible')
+                if 'replacement' in product_name_lower:
+                    tags.append('Replacement')
+                if 'original' in product_name_lower:
+                    tags.append('Original')
+                if 'premium' in product_name_lower:
+                    tags.append('Premium')
+                if 'quality' in product_name_lower:
+                    tags.append('Quality')
+                # Elimină duplicatele și ordonează alfabetic
+                tags = list(dict.fromkeys(tags))
+                tags = sorted(set(tags))
+
             category_path = self.detect_category(product_name, tags)
 
             # ===== Disponibilitate: in_stock / preorder / out_of_stock =====
