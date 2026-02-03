@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 from io import BytesIO
 from dotenv import load_dotenv, set_key
 import re
@@ -96,6 +96,213 @@ ACCESORII_SUBCAT_KEYWORDS = (
 )
 # Prioritate Folii înainte de Unelte (UV film / film protector → Folii Protecție)
 ACCESORII_FOLII_KEYWORDS = ('protector', 'folie', 'tempered', 'glass protector', 'screen protector', 'uv film', 'film protector', 'matt privacy', 'privacy film')
+
+
+def _get_badge_fonts():
+    """Fonturi pentru badge-uri (Windows / Linux / fallback)."""
+    try:
+        if sys.platform == 'win32':
+            fonts_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+            arial = os.path.join(fonts_dir, 'arialbd.ttf')
+            if os.path.exists(arial):
+                return (
+                    ImageFont.truetype(arial, 32),
+                    ImageFont.truetype(arial, 28),
+                    ImageFont.truetype(arial, 18),
+                )
+        for path in [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        ]:
+            if os.path.exists(path):
+                return (
+                    ImageFont.truetype(path, 32),
+                    ImageFont.truetype(path, 28),
+                    ImageFont.truetype(path, 18),
+                )
+    except Exception:
+        pass
+    return ImageFont.load_default(), ImageFont.load_default(), ImageFont.load_default()
+
+
+def _draw_text_bbox(draw, xy, text, font):
+    """Returnează (width, height) pentru text – compatibil Pillow 8+ (textbbox) sau vechi (textsize)."""
+    try:
+        bbox = draw.textbbox(xy, text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    except AttributeError:
+        w, h = draw.textsize(text, font=font)
+        return w, h
+
+
+def generate_badge_preview(image_path, badge_data, output_path=None):
+    """
+    Generează imagine cu badge-uri (brand, model, tehnologie, 120Hz, IC, TrueTone).
+    Păstrează imaginea originală; salvează varianta cu badge în output_path sau returnează PIL Image.
+    """
+    img = Image.open(image_path)
+    if img.mode not in ('RGBA', 'LA'):
+        img = img.convert('RGBA')
+    elif img.mode == 'LA':
+        img = img.convert('RGBA')
+    overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    width, height = img.size
+    font_brand, font_model, font_badge = _get_badge_fonts()
+
+    brand_colors = {
+        'JK': '#4CAF50', 'GX': '#2196F3', 'ZY': '#FF9800', 'RJ': '#F44336',
+        'HEX': '#9C27B0', 'Foxconn': '#607D8B', 'Service Pack': '#FFD700',
+        'Apple Original': '#A0A0A0', 'Samsung Original': '#1428A0',
+    }
+
+    if badge_data.get('brand'):
+        brand = str(badge_data['brand']).strip()
+        brand_color = brand_colors.get(brand, '#666666')
+        brand_text = brand.upper()
+        tw, th = _draw_text_bbox(draw, (0, 0), brand_text, font_brand)
+        padding, margin = 12, 20
+        rect = [margin, margin, margin + tw + padding * 2, margin + th + padding * 2]
+        draw.rounded_rectangle(rect, radius=8, fill=brand_color + 'E6')
+        draw.text((margin + padding, margin + padding - 4), brand_text, font=font_brand, fill='white')
+
+    if badge_data.get('model'):
+        model = str(badge_data['model']).strip()
+        tw, th = _draw_text_bbox(draw, (0, 0), model, font_model)
+        x = (width - tw) // 2
+        y = (height // 2) - 20
+        padding = 15
+        rect = [x - padding, y - padding, x + tw + padding, y + th + padding]
+        draw.rounded_rectangle(rect, radius=10, fill=(0, 0, 0, 180))
+        draw.text((x, y - 2), model, font=font_model, fill='white')
+
+    badges = []
+    if badge_data.get('tehnologie'):
+        badges.append(('tech', str(badge_data['tehnologie'])))
+    if badge_data.get('hz_120'):
+        badges.append(('hz', '120Hz'))
+    if badge_data.get('ic_transferabil'):
+        badges.append(('ic', 'IC ✓'))
+    if badge_data.get('truetone'):
+        badges.append(('tt', 'TT ✓'))
+
+    if badges:
+        badge_height, badge_padding, badge_margin, bottom_margin = 30, 10, 8, 20
+        badge_widths = []
+        for _, text in badges:
+            tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
+            badge_widths.append(tw + badge_padding * 2)
+        total_width = sum(badge_widths) + badge_margin * (len(badges) - 1)
+        start_x = (width - total_width) // 2
+        y = height - bottom_margin - badge_height
+        badge_colors_map = {'tech': '#2196F3', 'hz': '#9C27B0', 'ic': '#4CAF50', 'tt': '#FF9800'}
+        current_x = start_x
+        for i, (badge_type, text) in enumerate(badges):
+            w = badge_widths[i]
+            color = badge_colors_map.get(badge_type, '#666666')
+            rect = [current_x, y, current_x + w, y + badge_height]
+            draw.rounded_rectangle(rect, radius=5, fill=color + 'E6')
+            tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
+            text_x = current_x + (w - tw) // 2
+            draw.text((text_x, y + 5), text, font=font_badge, fill='white')
+            current_x += w + badge_margin
+
+    img = Image.alpha_composite(img, overlay)
+    if output_path:
+        img.save(output_path, 'WEBP', quality=90)
+        return output_path
+    return img
+
+
+class BadgePreviewWindow:
+    """Fereastră pentru preview și confirmare badge-uri pe prima imagine."""
+
+    def __init__(self, parent, image_path, detected_data, callback):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Preview Badge-uri - WebGSM")
+        self.window.geometry("900x700")
+        self.window.transient(parent)
+        self.window.grab_set()
+        self.image_path = image_path
+        self.callback = callback
+        self.badge_data = dict(detected_data) if detected_data else {}
+        self.setup_ui()
+        self.update_preview()
+        self.window.protocol("WM_DELETE_WINDOW", self.on_skip)
+
+    def setup_ui(self):
+        main_frame = ttk.Frame(self.window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        left_frame = ttk.LabelFrame(main_frame, text="Preview", padding=10)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.preview_label = ttk.Label(left_frame)
+        self.preview_label.pack(fill=tk.BOTH, expand=True)
+        right_frame = ttk.LabelFrame(main_frame, text="Setări Badge-uri", padding=10)
+        right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+        ttk.Label(right_frame, text="Brand Piesă:").pack(anchor=tk.W)
+        self.brand_var = tk.StringVar(value=self.badge_data.get('brand', '') or '')
+        brand_combo = ttk.Combobox(right_frame, textvariable=self.brand_var, width=20)
+        brand_combo['values'] = ['', 'JK', 'GX', 'ZY', 'RJ', 'HEX', 'Foxconn', 'Service Pack', 'Apple Original', 'Samsung Original']
+        brand_combo.pack(fill=tk.X, pady=(0, 10))
+        brand_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        ttk.Label(right_frame, text="Model Compatibil:").pack(anchor=tk.W)
+        self.model_var = tk.StringVar(value=self.badge_data.get('model', '') or '')
+        model_combo = ttk.Combobox(right_frame, textvariable=self.model_var, width=20)
+        model_combo['values'] = ['', 'iPhone 17 Pro Max', 'iPhone 17 Pro', 'iPhone 17', 'iPhone 16 Pro Max', 'iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro Max', 'iPhone 15 Pro', 'iPhone 15', 'iPhone 14 Pro Max', 'iPhone 14 Pro', 'iPhone 14', 'iPhone 13', 'iPhone 12', 'iPhone 11', 'Galaxy S24 Ultra', 'Galaxy S24', 'Galaxy S23 Ultra', 'Galaxy A54']
+        model_combo.pack(fill=tk.X, pady=(0, 10))
+        model_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        ttk.Label(right_frame, text="Tehnologie:").pack(anchor=tk.W)
+        self.tech_var = tk.StringVar(value=self.badge_data.get('tehnologie', '') or '')
+        tech_combo = ttk.Combobox(right_frame, textvariable=self.tech_var, width=20)
+        tech_combo['values'] = ['', 'Soft OLED', 'Hard OLED', 'OLED', 'Incell', 'LCD', 'TFT', 'AMOLED']
+        tech_combo.pack(fill=tk.X, pady=(0, 10))
+        tech_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        ttk.Separator(right_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        self.hz_var = tk.BooleanVar(value=bool(self.badge_data.get('hz_120')))
+        ttk.Checkbutton(right_frame, text="120Hz", variable=self.hz_var, command=self.update_preview).pack(anchor=tk.W)
+        self.ic_var = tk.BooleanVar(value=bool(self.badge_data.get('ic_transferabil')))
+        ttk.Checkbutton(right_frame, text="IC Transferabil", variable=self.ic_var, command=self.update_preview).pack(anchor=tk.W)
+        self.tt_var = tk.BooleanVar(value=bool(self.badge_data.get('truetone')))
+        ttk.Checkbutton(right_frame, text="TrueTone", variable=self.tt_var, command=self.update_preview).pack(anchor=tk.W)
+        ttk.Separator(right_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=15)
+        ttk.Button(right_frame, text="✓ Confirmă", command=self.on_confirm).pack(fill=tk.X, pady=5)
+        ttk.Button(right_frame, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(fill=tk.X, pady=5)
+        ttk.Button(right_frame, text="⊘ Fără Badge", command=self.on_skip).pack(fill=tk.X, pady=5)
+
+    def get_current_badge_data(self):
+        return {
+            'brand': (self.brand_var.get() or '').strip() or None,
+            'model': (self.model_var.get() or '').strip() or None,
+            'tehnologie': (self.tech_var.get() or '').strip() or None,
+            'hz_120': self.hz_var.get(),
+            'ic_transferabil': self.ic_var.get(),
+            'truetone': self.tt_var.get(),
+        }
+
+    def update_preview(self):
+        badge_data = self.get_current_badge_data()
+        try:
+            preview_img = generate_badge_preview(self.image_path, badge_data)
+            preview_img.thumbnail((500, 500), Image.Resampling.LANCZOS)
+            if preview_img.mode == 'RGBA':
+                preview_img = preview_img.convert('RGB')
+            self.photo = ImageTk.PhotoImage(preview_img)
+            self.preview_label.configure(image=self.photo)
+        except Exception:
+            pass
+
+    def on_confirm(self):
+        self.callback('confirm', self.get_current_badge_data())
+        self.window.destroy()
+
+    def on_batch(self):
+        self.callback('batch', self.get_current_badge_data())
+        self.window.destroy()
+
+    def on_skip(self):
+        self.callback('skip', None)
+        self.window.destroy()
+
 
 class ImportProduse:
     def __init__(self, root):
@@ -179,15 +386,18 @@ class ImportProduse:
         self.optimize_images_var = tk.BooleanVar(value=False)  # ❌ DEZACTIVAT - descarcă pozele MARI
         self.convert_price_var = tk.BooleanVar(value=True)
         self.extract_description_var = tk.BooleanVar(value=True)
+        self.badge_preview_var = tk.BooleanVar(value=False)
         
         ttk.Checkbutton(frame_options, text="Descarcă toate imaginile produsului", 
                        variable=self.download_images_var).grid(row=0, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Optimizează imaginile (resize)", 
                        variable=self.optimize_images_var).grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        ttk.Checkbutton(frame_options, text="Preview badge pe prima imagine (brand, model, 120Hz, IC, TT)", 
+                       variable=self.badge_preview_var).grid(row=2, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Convertește prețul EUR → RON", 
-                       variable=self.convert_price_var).grid(row=2, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.convert_price_var).grid(row=3, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Extrage descriere în română", 
-                       variable=self.extract_description_var).grid(row=3, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.extract_description_var).grid(row=4, column=0, sticky='w', padx=5, pady=2)
         
         # Progress
         frame_progress = ttk.Frame(parent)
@@ -1338,7 +1548,89 @@ class ImportProduse:
         self.btn_start.config(state='normal')
         self.btn_stop.config(state='disabled')
         self.progress_var.set("Import oprit")
-    
+
+    def check_batch_badge_settings(self, product_data):
+        """Verifică dacă există setări batch pentru acest produs (model compatibil)."""
+        if not getattr(self, 'batch_badge_settings', None):
+            return None
+        batch = self.batch_badge_settings
+        batch_model = (batch.get('model') or '').strip()
+        current_model = (product_data.get('pa_model') or '').strip()
+        if batch_model and current_model and batch_model in current_model:
+            return batch.get('data')
+        return None
+
+    def _run_badge_preview(self, image_path, product_data):
+        """Rulează pe main thread: deschide fereastra de preview badge-uri."""
+        name = (product_data.get('name') or '').lower()
+        detected_data = {
+            'brand': product_data.get('pa_brand_piesa') or None,
+            'model': product_data.get('pa_model') or None,
+            'tehnologie': product_data.get('pa_tehnologie') or None,
+            'hz_120': '120hz' in name or '120 hz' in name,
+            'ic_transferabil': product_data.get('ic_movable') == 'true',
+            'truetone': product_data.get('truetone_support') == 'true',
+        }
+
+        def on_done(action, data):
+            self._badge_result = {'action': action, 'data': data}
+            if getattr(self, '_badge_event', None):
+                self._badge_event.set()
+
+        BadgePreviewWindow(self.root, image_path, detected_data, on_done)
+
+    def process_images_with_badges(self, images_list, product_data):
+        """
+        Procesează imaginile cu badge-uri (doar prima imagine).
+        Afișează preview pe main thread; păstrează originalul, salvează _badge.webp dacă user confirmă.
+        """
+        if not images_list or not self.badge_preview_var.get():
+            return images_list
+        first = images_list[0]
+        first_path = first.get('local_path', first) if isinstance(first, dict) else first
+        if not first_path or not Path(first_path).exists():
+            return images_list
+
+        batch_data = self.check_batch_badge_settings(product_data)
+        if batch_data:
+            out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
+            generate_badge_preview(first_path, batch_data, out_path)
+            if isinstance(first, dict):
+                images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
+            else:
+                images_list[0] = out_path
+            self.log(f"   🏷️ Badge aplicat (batch) pe prima imagine", "INFO")
+            return images_list
+
+        self._badge_event = threading.Event()
+        self._badge_result = None
+        self.root.after(0, lambda: self._run_badge_preview(first_path, product_data))
+        self._badge_event.wait()
+        res = self._badge_result
+        if not res:
+            return images_list
+        action, data = res.get('action'), res.get('data')
+        if action == 'skip':
+            return images_list
+        if action == 'confirm' and data:
+            out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
+            generate_badge_preview(first_path, data, out_path)
+            if isinstance(first, dict):
+                images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
+            else:
+                images_list[0] = out_path
+            self.log(f"   🏷️ Badge confirmat pe prima imagine", "INFO")
+        elif action == 'batch' and data:
+            self.batch_badge_settings = {'model': data.get('model'), 'data': data}
+            out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
+            generate_badge_preview(first_path, data, out_path)
+            if isinstance(first, dict):
+                images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
+            else:
+                images_list[0] = out_path
+            self.log(f"   🏷️ Badge aplicat (batch pentru model similare)", "INFO")
+        return images_list
+
     def run_import(self):
         """Execută exportul în CSV format WebGSM cu upload imagini pe WordPress"""
         try:
@@ -1393,6 +1685,10 @@ class ImportProduse:
                         product_data['webgsm_sku'] = webgsm_sku
                         # sku_furnizor e deja setat corect în scrape_product()
                         # ean_real e deja setat corect în scrape_product()
+
+                        # Preview badge pe prima imagine (opțional): confirmă/modifică/skip; originalul rămâne backup
+                        if product_data.get('images') and self.badge_preview_var.get():
+                            product_data['images'] = self.process_images_with_badges(product_data['images'], product_data)
 
                         success_count += 1
                         self.log(f"✓ Produs procesat! SKU: {webgsm_sku}", "SUCCESS")
