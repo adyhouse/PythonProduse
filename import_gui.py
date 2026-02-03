@@ -103,6 +103,7 @@ BADGE_CUSTOM_MODELS_FILE = 'data/badge_custom_models.txt'
 BADGE_CUSTOM_TECH_FILE = 'data/badge_custom_tech.txt'
 BADGE_LAST_CONFIRMED_FILE = 'data/badge_last_confirmed.json'
 BADGE_PRESETS_BY_BRAND_FILE = 'data/badge_presets_by_brand.json'
+BADGE_CUSTOM_LIST_FILE = 'data/badge_custom_list.json'
 BADGE_DEFAULT_BRANDS = ['', 'JK', 'GX', 'ZY', 'RJ', 'HEX', 'Foxconn', 'Service Pack', 'Apple Original', 'Samsung Original']
 BADGE_HZ_OPTIONS = ['', '60Hz', '90Hz', '120Hz', '144Hz', '240Hz']
 # Paletă culori rapide (hex)
@@ -166,12 +167,12 @@ def _draw_text_centered(draw, rect, text, font, fill='white'):
 
 
 def _draw_text_vertical_centered(overlay, draw, rect, text, font, fill='white'):
-    """Desenează text rotit 90° (vertical), centrat în rect. Pill vertical = text pe verticală."""
+    """Desenează text rotit 90° (vertical), centrat în rect. Spațiu suficient ca textul să nu fie tăiat."""
     x0, y0, x1, y1 = rect
     tw, th = _draw_text_bbox(draw, (0, 0), text, font)
-    pad = 8
-    w_canvas = max(int(th) + pad * 2, 4)
-    h_canvas = max(int(tw) + pad * 2, 4)
+    pad = max(16, min(tw, th) // 2)
+    w_canvas = max(int(tw) + pad * 2, 8)
+    h_canvas = max(int(th) + pad * 2, 8)
     small = Image.new('RGBA', (w_canvas, h_canvas), (0, 0, 0, 0))
     small_draw = ImageDraw.Draw(small)
     cx_s, cy_s = w_canvas / 2, h_canvas / 2
@@ -198,13 +199,13 @@ def _parse_hex_color(hex_str, default='#666666'):
     return default + 'E6' if len(default) == 7 else default
 
 
-def generate_badge_preview(image_path, badge_data, output_path=None, style=None):
+def generate_badge_preview(image_path, badge_data, output_path=None, style=None, script_dir=None):
     """
-    Generează imagine cu badge-uri (brand, model, tehnologie, 120Hz, IC, TrueTone).
-    style: dict opțional – brand_bg, brand_pos, brand_shape, brand_font_size, model_bg, model_pos, model_font_size,
-           badges_bg, badges_pos, badges_font_size (poziții: top_left, top_right, center, bottom_center; formă: rounded, rect, pill).
+    Generează imagine cu badge-uri (brand, model, tehnologie, Hz, IC, TrueTone) + badge-uri custom (text/emoji/imagine).
+    script_dir: folder pentru căi relative la imaginile custom (badge predefinite).
     """
     style = style or {}
+    base_dir = Path(script_dir or Path(image_path or '.').resolve().parent)
     img = Image.open(image_path)
     if img.mode not in ('RGBA', 'LA'):
         img = img.convert('RGBA')
@@ -251,12 +252,22 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
         padding = int(style.get('brand_padding', 14))
         vertical_pill = brand_shape == 'pill_vertical'
         if vertical_pill:
-            w_rect = th + padding * 2
-            h_rect = tw + padding * 2
+            side = max(tw, th) + padding * 2
+            w_rect = side
+            h_rect = side
         else:
             w_rect = tw + padding * 2
             h_rect = th + padding * 2
-        if 'right' in brand_pos:
+        brand_fx = style.get('brand_x')
+        brand_fy = style.get('brand_y')
+        if brand_fx is not None and brand_fy is not None:
+            try:
+                x0 = int(brand_fx) + brand_offset_x
+                y0 = int(brand_fy) + brand_offset_y
+            except (TypeError, ValueError):
+                x0 = margin + brand_offset_x
+                y0 = margin + brand_offset_y
+        elif 'right' in brand_pos:
             x0 = width - margin - w_rect + brand_offset_x
             y0 = margin + brand_offset_y
         else:
@@ -275,14 +286,27 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
 
     model_offset_x = int(style.get('model_offset_x', 0))
     model_offset_y = int(style.get('model_offset_y', 0))
+    model_vertical = style.get('model_vertical') or (style.get('model_shape') or '').strip().lower() == 'pill_vertical'
     model_pos = (style.get('model_pos') or 'center').strip().lower()
     model_bg = _parse_hex_color(style.get('model_bg'), '#000000')
     model_padding = int(style.get('model_padding', 18))
     if badge_data.get('model'):
         model = str(badge_data['model']).strip()
         tw, th = _draw_text_bbox(draw, (0, 0), model, font_model)
-        rw, rh = tw + model_padding * 2, th + model_padding * 2
-        if 'center' in model_pos:
+        if model_vertical:
+            side = max(tw, th) + model_padding * 2
+            rw, rh = side, side
+        else:
+            rw, rh = tw + model_padding * 2, th + model_padding * 2
+        model_fx, model_fy = style.get('model_x'), style.get('model_y')
+        if model_fx is not None and model_fy is not None:
+            try:
+                x0 = int(model_fx) + model_offset_x
+                y0 = int(model_fy) + model_offset_y
+            except (TypeError, ValueError):
+                x0 = (width - rw) // 2 + model_offset_x
+                y0 = (height - rh) // 2 - 20 + model_offset_y
+        elif 'center' in model_pos:
             x0 = (width - rw) // 2 + model_offset_x
             y0 = (height - rh) // 2 - 20 + model_offset_y
         elif 'left' in model_pos:
@@ -293,7 +317,10 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
             y0 = (height - rh) // 2 + model_offset_y
         rect = [x0, y0, x0 + rw, y0 + rh]
         draw.rounded_rectangle(rect, radius=12, fill=model_bg if len(model_bg) > 7 else model_bg + 'B3')
-        _draw_text_centered(draw, rect, model, font_model, 'white')
+        if model_vertical:
+            _draw_text_vertical_centered(overlay, draw, rect, model, font_model, 'white')
+        else:
+            _draw_text_centered(draw, rect, model, font_model, 'white')
 
     badges_offset_x = int(style.get('badges_offset_x', 0))
     badges_offset_y = int(style.get('badges_offset_y', 0))
@@ -309,6 +336,7 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
     if badge_data.get('truetone'):
         badges.append(('tt', 'TT ✓'))
 
+    badges_vertical = bool(style.get('badges_vertical'))
     badges_pos = (style.get('badges_pos') or 'bottom_center').strip().lower()
     badge_extra = int(style.get('badges_padding', 14))
     badge_height = int(style.get('badges_font_size', 24)) + badge_extra
@@ -316,31 +344,108 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
     badge_margin = int(style.get('badges_spacing', 10))
     bottom_margin = int(style.get('bottom_margin', 24))
     badge_colors_map = {'tech': '#2196F3', 'hz': '#9C27B0', 'ic': '#4CAF50', 'tt': '#FF9800'}
+    badges_fx, badges_fy = style.get('badges_x'), style.get('badges_y')
     if badges:
         badge_widths = []
+        badge_heights = []
         for _, text in badges:
-            tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
-            badge_widths.append(tw + badge_padding * 2)
+            tw, th = _draw_text_bbox(draw, (0, 0), text, font_badge)
+            if badges_vertical:
+                side = max(tw, th) + badge_padding * 2
+                badge_widths.append(side)
+                badge_heights.append(side)
+            else:
+                badge_widths.append(tw + badge_padding * 2)
+                badge_heights.append(badge_height)
         total_width = sum(badge_widths) + badge_margin * (len(badges) - 1)
-        if 'bottom_right' in badges_pos:
-            start_x = width - margin - total_width
-        elif 'bottom_left' in badges_pos:
-            start_x = margin
+        row_height = max(badge_heights) if badge_heights else badge_height
+        if badges_fx is not None and badges_fy is not None:
+            try:
+                start_x = int(badges_fx) - total_width // 2
+                y = int(badges_fy) - row_height // 2
+            except (TypeError, ValueError):
+                start_x = (width - total_width) // 2 + badges_offset_x
+                y = height - bottom_margin - row_height + badges_offset_y
         else:
-            start_x = (width - total_width) // 2
-        start_x += badges_offset_x
-        y = height - bottom_margin - badge_height + badges_offset_y
+            if 'bottom_right' in badges_pos:
+                start_x = width - margin - total_width
+            elif 'bottom_left' in badges_pos:
+                start_x = margin
+            else:
+                start_x = (width - total_width) // 2
+            start_x += badges_offset_x
+            y = height - bottom_margin - row_height + badges_offset_y
         current_x = start_x
         override_bg = style.get('badges_bg')
         for i, (badge_type, text) in enumerate(badges):
             w = badge_widths[i]
+            h = badge_heights[i] if badges_vertical else badge_height
             color = _parse_hex_color(override_bg) if override_bg else (badge_colors_map.get(badge_type, '#666666') + 'E6')
             if len(color) == 7:
                 color = color + 'E6'
-            rect = [current_x, y, current_x + w, y + badge_height]
+            rect = [current_x, y, current_x + w, y + h]
             draw.rounded_rectangle(rect, radius=8, fill=color)
-            _draw_text_centered(draw, rect, text, font_badge, 'white')
+            if badges_vertical:
+                _draw_text_vertical_centered(overlay, draw, rect, text, font_badge, 'white')
+            else:
+                _draw_text_centered(draw, rect, text, font_badge, 'white')
             current_x += w + badge_margin
+
+    custom_badges = style.get('custom_badges') or []
+    if custom_badges and isinstance(custom_badges, list):
+        for item in custom_badges:
+            if not isinstance(item, dict):
+                continue
+            try:
+                kind = (item.get('type') or 'text').strip().lower()
+                px = int(item.get('x', 0))
+                py = int(item.get('y', 0))
+                scale = float(item.get('scale', 1.0))
+                if kind == 'image' and item.get('path'):
+                    path = Path(item.get('path'))
+                    if not path.is_absolute():
+                        path = base_dir / path
+                    if path.exists():
+                        deco = Image.open(path).convert('RGBA')
+                        if scale != 1.0:
+                            nw, nh = int(deco.width * scale), int(deco.height * scale)
+                            deco = deco.resize((nw, nh), Image.Resampling.LANCZOS)
+                        overlay.paste(deco, (px, py), deco)
+                else:
+                    txt = (item.get('text') or '').strip() or item.get('emoji', '')
+                    if not txt:
+                        continue
+                    fsize = int(item.get('font_size', 24))
+                    try:
+                        if sys.platform == 'win32':
+                            arial = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arialbd.ttf')
+                            cfont = ImageFont.truetype(arial, min(max(fsize, 8), 72)) if os.path.exists(arial) else font_badge
+                        else:
+                            cfont = font_badge
+                    except Exception:
+                        cfont = font_badge
+                    tw, th = _draw_text_bbox(draw, (0, 0), txt, cfont)
+                    pad = 8
+                    vertical = bool(item.get('vertical'))
+                    if vertical:
+                        side = max(tw, th) + pad * 2
+                        wbox, hbox = side, side
+                    else:
+                        wbox, hbox = tw + pad * 2, th + pad * 2
+                    if scale != 1.0:
+                        wbox, hbox = int(wbox * scale), int(hbox * scale)
+                    bx0 = px
+                    by0 = py
+                    rect_c = [bx0, by0, bx0 + wbox, by0 + hbox]
+                    bg = (item.get('bg') or '').strip()
+                    if bg:
+                        draw.rounded_rectangle(rect_c, radius=6, fill=_parse_hex_color(bg))
+                    if vertical:
+                        _draw_text_vertical_centered(overlay, draw, rect_c, txt, cfont, (item.get('color') or 'white'))
+                    else:
+                        _draw_text_centered(draw, rect_c, txt, cfont, (item.get('color') or 'white'))
+            except Exception:
+                pass
 
     img = Image.alpha_composite(img, overlay)
     if output_path:
@@ -631,6 +736,14 @@ class BadgePreviewWindow:
         _spin(sf, "Offset X brand (px):", self.brand_offset_x_var, -300, 300, 0)
         self.brand_offset_y_var = tk.StringVar(value='0')
         _spin(sf, "Offset Y brand (px):", self.brand_offset_y_var, -300, 300, 0)
+        ttk.Label(sf, text="Poziție liberă (gol = automat):").pack(anchor=tk.W)
+        self.brand_x_var = tk.StringVar(value='')
+        ttk.Entry(sf, textvariable=self.brand_x_var, width=8).pack(fill=tk.X, pady=(0, 2))
+        self.brand_x_var.trace_add('write', lambda *a: self.update_preview())
+        self.brand_y_var = tk.StringVar(value='')
+        ttk.Entry(sf, textvariable=self.brand_y_var, width=8).pack(fill=tk.X, pady=(0, 6))
+        self.brand_y_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(sf, text="X, Y brand (px din colțul stânga-sus)").pack(anchor=tk.W)
 
         ttk.Label(sf, text="Model (centru)", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(8, 2))
         self.model_bg_var = tk.StringVar(value='')
@@ -639,6 +752,8 @@ class BadgePreviewWindow:
         self.model_pos_var = tk.StringVar(value='center')
         ttk.Combobox(sf, textvariable=self.model_pos_var, width=14, values=['center', 'top_left', 'top_right']).pack(fill=tk.X, pady=(0, 6))
         self.model_pos_var.trace_add('write', lambda *a: self.update_preview())
+        self.model_vertical_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sf, text="Model vertical (text rotit 90°)", variable=self.model_vertical_var, command=self.update_preview).pack(anchor=tk.W)
         self.model_font_var = tk.StringVar(value='34')
         _spin(sf, "Font model (px):", self.model_font_var, 12, 72, 34)
         self.model_padding_var = tk.StringVar(value='18')
@@ -647,6 +762,14 @@ class BadgePreviewWindow:
         _spin(sf, "Offset X model (px):", self.model_offset_x_var, -300, 300, 0)
         self.model_offset_y_var = tk.StringVar(value='0')
         _spin(sf, "Offset Y model (px):", self.model_offset_y_var, -300, 300, 0)
+        ttk.Label(sf, text="Poziție liberă (gol = automat):").pack(anchor=tk.W)
+        self.model_x_var = tk.StringVar(value='')
+        ttk.Entry(sf, textvariable=self.model_x_var, width=8).pack(fill=tk.X, pady=(0, 2))
+        self.model_x_var.trace_add('write', lambda *a: self.update_preview())
+        self.model_y_var = tk.StringVar(value='')
+        ttk.Entry(sf, textvariable=self.model_y_var, width=8).pack(fill=tk.X, pady=(0, 6))
+        self.model_y_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(sf, text="X, Y model (px din colțul stânga-sus)").pack(anchor=tk.W)
 
         ttk.Label(sf, text="Badge-uri jos (120Hz, IC, TT, tehnologie)", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(8, 2))
         self.badges_bg_var = tk.StringVar(value='')
@@ -661,14 +784,47 @@ class BadgePreviewWindow:
         _spin(sf, "Padding badge (px):", self.badges_padding_var, 6, 32, 14)
         self.badges_spacing_var = tk.StringVar(value='10')
         _spin(sf, "Spațiu între badge-uri (px):", self.badges_spacing_var, 2, 24, 10)
+        self.badges_vertical_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sf, text="Badge-uri jos verticale (text rotit 90°)", variable=self.badges_vertical_var, command=self.update_preview).pack(anchor=tk.W)
         self.badges_offset_x_var = tk.StringVar(value='0')
         _spin(sf, "Offset X badge-uri (px):", self.badges_offset_x_var, -300, 300, 0)
         self.badges_offset_y_var = tk.StringVar(value='0')
         _spin(sf, "Offset Y badge-uri (px):", self.badges_offset_y_var, -300, 300, 0)
+        ttk.Label(sf, text="Poziție liberă centru rând (gol = automat):").pack(anchor=tk.W)
+        self.badges_x_var = tk.StringVar(value='')
+        ttk.Entry(sf, textvariable=self.badges_x_var, width=8).pack(fill=tk.X, pady=(0, 2))
+        self.badges_x_var.trace_add('write', lambda *a: self.update_preview())
+        self.badges_y_var = tk.StringVar(value='')
+        ttk.Entry(sf, textvariable=self.badges_y_var, width=8).pack(fill=tk.X, pady=(0, 6))
+        self.badges_y_var.trace_add('write', lambda *a: self.update_preview())
         self.bottom_margin_var = tk.StringVar(value='24')
         _spin(sf, "Margine jos (px):", self.bottom_margin_var, 8, 60, 24)
         self.margin_var = tk.StringVar(value='20')
         _spin(sf, "Margine generală (px):", self.margin_var, 8, 60, 20)
+
+        # —— Tab Badge-uri extra (text/emoji/imagine, poziție liberă) ——
+        tab_extra = ttk.Frame(notebook, padding=8)
+        notebook.add(tab_extra, text="Badge-uri extra")
+        ef = self._make_scroll_frame(tab_extra)
+        ttk.Label(ef, text="Badge-uri predefinite (text, emoji sau imagine) poziționabile oriunde.", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(0, 6))
+        self.custom_badges_list = getattr(self, 'custom_badges_list', [])
+        self._custom_badges_listbox_var = tk.Variable(value=[f"{i.get('type','')} @ ({i.get('x',0)},{i.get('y',0)})" for i in self.custom_badges_list])
+        lb_frame = ttk.Frame(ef)
+        lb_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+        listbox = tk.Listbox(lb_frame, listvariable=self._custom_badges_listbox_var, height=4, selectmode=tk.SINGLE)
+        listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb = ttk.Scrollbar(lb_frame, command=listbox.yview)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        listbox.configure(yscrollcommand=sb.set)
+        self._custom_badges_listbox = listbox
+        btn_row = ttk.Frame(ef)
+        btn_row.pack(fill=tk.X, pady=4)
+        ttk.Button(btn_row, text="+ Text/Emoji", command=self._add_custom_text_badge).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btn_row, text="+ Imagine", command=self._add_custom_image_badge).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="Șterge", command=self._remove_custom_badge).pack(side=tk.LEFT, padx=4)
+        ttk.Button(ef, text="Încarcă listă din fișier...", command=self._load_custom_badges_file).pack(anchor=tk.W, pady=4)
+        ttk.Button(ef, text="Salvează listă în fișier...", command=self._save_custom_badges_file).pack(anchor=tk.W, pady=(0, 8))
+        ttk.Label(ef, text="Fișier: data/badge_custom_list.json (căi relative la folderul scriptului)").pack(anchor=tk.W)
 
         # Butoane acțiuni (sub notebook)
         btn_frame = ttk.Frame(right_frame)
@@ -727,21 +883,32 @@ class BadgePreviewWindow:
         self.brand_padding_var.set(str(style.get('brand_padding', 14)))
         self.brand_offset_x_var.set(str(style.get('brand_offset_x', 0)))
         self.brand_offset_y_var.set(str(style.get('brand_offset_y', 0)))
+        self.brand_x_var.set('' if 'brand_x' not in style else str(style['brand_x']))
+        self.brand_y_var.set('' if 'brand_y' not in style else str(style['brand_y']))
         self.model_bg_var.set(style.get('model_bg') or '')
         self.model_pos_var.set(style.get('model_pos', 'center'))
+        self.model_vertical_var.set(style.get('model_vertical', False))
         self.model_font_var.set(str(style.get('model_font_size', 34)))
         self.model_padding_var.set(str(style.get('model_padding', 18)))
         self.model_offset_x_var.set(str(style.get('model_offset_x', 0)))
         self.model_offset_y_var.set(str(style.get('model_offset_y', 0)))
+        self.model_x_var.set('' if 'model_x' not in style else str(style['model_x']))
+        self.model_y_var.set('' if 'model_y' not in style else str(style['model_y']))
         self.badges_bg_var.set(style.get('badges_bg') or '')
         self.badges_pos_var.set(style.get('badges_pos', 'bottom_center'))
+        self.badges_vertical_var.set(style.get('badges_vertical', False))
         self.badges_font_var.set(str(style.get('badges_font_size', 24)))
         self.badges_padding_var.set(str(style.get('badges_padding', 14)))
         self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
         self.badges_offset_x_var.set(str(style.get('badges_offset_x', 0)))
         self.badges_offset_y_var.set(str(style.get('badges_offset_y', 0)))
+        self.badges_x_var.set('' if 'badges_x' not in style else str(style['badges_x']))
+        self.badges_y_var.set('' if 'badges_y' not in style else str(style['badges_y']))
         self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
         self.margin_var.set(str(style.get('margin', 20)))
+        if 'custom_badges' in style and isinstance(style['custom_badges'], list):
+            self.custom_badges_list = list(style['custom_badges'])
+            self._refresh_custom_badges_listbox()
 
     def _reset_to_brand_preset(self):
         """Resetează la ultima setare salvată pentru brandul curent (preset per brand)."""
@@ -802,13 +969,96 @@ class BadgePreviewWindow:
             if t not in vals:
                 self.tech_combo['values'] = vals + [t]
 
+    def _refresh_custom_badges_listbox(self):
+        if getattr(self, '_custom_badges_listbox_var', None) is None:
+            return
+        lines = []
+        for i in self.custom_badges_list:
+            t = i.get('type', 'text')
+            if t == 'image':
+                lines.append(f"img @ ({i.get('x',0)},{i.get('y',0)}) {i.get('path','')[:20]}")
+            else:
+                lines.append(f"txt @ ({i.get('x',0)},{i.get('y',0)}) {(i.get('text') or i.get('emoji') or '')[:20]}")
+        self._custom_badges_listbox_var.set(lines)
+
+    def _add_custom_text_badge(self):
+        d = {'type': 'text', 'text': '✓', 'x': 50, 'y': 50, 'scale': 1.0, 'vertical': False, 'font_size': 24}
+        self.custom_badges_list.append(d)
+        self._refresh_custom_badges_listbox()
+        self.update_preview()
+
+    def _add_custom_image_badge(self):
+        path = filedialog.askopenfilename(title="Alege imagine (PNG cu transparență)", filetypes=[("PNG", "*.png"), ("Toate", "*.*")])
+        if path:
+            rel = Path(path)
+            try:
+                rel = rel.relative_to(Path(self.script_dir))
+            except ValueError:
+                rel = Path(path).name
+            d = {'type': 'image', 'path': str(rel), 'x': 50, 'y': 50, 'scale': 1.0}
+            self.custom_badges_list.append(d)
+            self._refresh_custom_badges_listbox()
+            self.update_preview()
+
+    def _remove_custom_badge(self):
+        lb = getattr(self, '_custom_badges_listbox', None)
+        if not lb or not self.custom_badges_list:
+            return
+        sel = lb.curselection()
+        if sel:
+            idx = int(sel[0])
+            self.custom_badges_list.pop(idx)
+            self._refresh_custom_badges_listbox()
+            self.update_preview()
+
+    def _load_custom_badges_file(self):
+        path = _badge_data_dir(self.script_dir) / Path(BADGE_CUSTOM_LIST_FILE).name
+        if path.exists():
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                self.custom_badges_list = data if isinstance(data, list) else data.get('badges', [])
+            except Exception:
+                self.custom_badges_list = []
+        else:
+            path = filedialog.askopenfilename(title="Încarcă listă badge-uri", filetypes=[("JSON", "*.json"), ("Toate", "*.*")])
+            if path:
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    self.custom_badges_list = data if isinstance(data, list) else data.get('badges', [])
+                except Exception:
+                    pass
+        self._refresh_custom_badges_listbox()
+        self.update_preview()
+
+    def _save_custom_badges_file(self):
+        path = _badge_data_dir(self.script_dir) / Path(BADGE_CUSTOM_LIST_FILE).name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(self.custom_badges_list, f, indent=2)
+        except Exception:
+            pass
+        self._refresh_custom_badges_listbox()
+
     def get_current_style(self):
         def _int(v, default):
             try:
                 return int(v.get() if hasattr(v, 'get') else v)
             except (ValueError, TypeError):
                 return default
-        return {
+        def _opt_int(v, default=None):
+            s = (v.get() if hasattr(v, 'get') else v) or ''
+            s = str(s).strip()
+            if not s:
+                return default
+            try:
+                return int(s)
+            except (ValueError, TypeError):
+                return default
+
+        style = {
             'brand_bg': (self.brand_bg_var.get() or '').strip() or None,
             'brand_pos': (self.brand_pos_var.get() or 'top_left').strip(),
             'brand_shape': (self.brand_shape_var.get() or 'rounded').strip(),
@@ -817,12 +1067,14 @@ class BadgePreviewWindow:
             'brand_offset_x': _int(self.brand_offset_x_var, 0),
             'brand_offset_y': _int(self.brand_offset_y_var, 0),
             'model_pos': (self.model_pos_var.get() or 'center').strip(),
+            'model_vertical': self.model_vertical_var.get(),
             'model_bg': (self.model_bg_var.get() or '').strip() or None,
             'model_font_size': _int(self.model_font_var, 34),
             'model_padding': _int(self.model_padding_var, 18),
             'model_offset_x': _int(self.model_offset_x_var, 0),
             'model_offset_y': _int(self.model_offset_y_var, 0),
             'badges_pos': (self.badges_pos_var.get() or 'bottom_center').strip(),
+            'badges_vertical': self.badges_vertical_var.get(),
             'badges_bg': (self.badges_bg_var.get() or '').strip() or None,
             'badges_font_size': _int(self.badges_font_var, 24),
             'badges_padding': _int(self.badges_padding_var, 14),
@@ -832,6 +1084,26 @@ class BadgePreviewWindow:
             'bottom_margin': _int(self.bottom_margin_var, 24),
             'margin': _int(self.margin_var, 20),
         }
+        bx = _opt_int(self.brand_x_var)
+        if bx is not None:
+            style['brand_x'] = bx
+        by = _opt_int(self.brand_y_var)
+        if by is not None:
+            style['brand_y'] = by
+        mx = _opt_int(self.model_x_var)
+        if mx is not None:
+            style['model_x'] = mx
+        my = _opt_int(self.model_y_var)
+        if my is not None:
+            style['model_y'] = my
+        bbx = _opt_int(self.badges_x_var)
+        if bbx is not None:
+            style['badges_x'] = bbx
+        bby = _opt_int(self.badges_y_var)
+        if bby is not None:
+            style['badges_y'] = bby
+        style['custom_badges'] = getattr(self, 'custom_badges_list', [])
+        return style
 
     def get_current_badge_data(self):
         hz_t = (self.hz_text_var.get() or '').strip()
@@ -859,7 +1131,7 @@ class BadgePreviewWindow:
             else:
                 badge_data = self.get_current_badge_data()
                 style = badge_data.pop('_style', None)
-                preview_img = generate_badge_preview(img_path, badge_data, style=style)
+                preview_img = generate_badge_preview(img_path, badge_data, style=style, script_dir=getattr(self, 'script_dir', None))
             if preview_img is None:
                 return
             preview_img = preview_img.copy()
@@ -2199,7 +2471,7 @@ class ImportProduse:
             first_path = first.get('local_path', first) if isinstance(first, dict) else first
             if first_path and Path(first_path).exists():
                 out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-                generate_badge_preview(first_path, batch_data, out_path, style=batch_style)
+                generate_badge_preview(first_path, batch_data, out_path, style=batch_style, script_dir=self._script_dir)
                 if isinstance(first, dict):
                     images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
                 else:
@@ -2238,7 +2510,7 @@ class ImportProduse:
             first = img_item
             if action == 'confirm' and badge_data:
                 out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-                generate_badge_preview(first_path, badge_data, out_path, style=style)
+                generate_badge_preview(first_path, badge_data, out_path, style=style, script_dir=self._script_dir)
                 if isinstance(first, dict):
                     images_list[idx] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
                 else:
@@ -2248,7 +2520,7 @@ class ImportProduse:
             if action == 'batch' and badge_data and apply_badges:
                 self.batch_badge_settings = {'model': badge_data.get('model'), 'data': badge_data, 'style': style}
                 out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-                generate_badge_preview(first_path, badge_data, out_path, style=style)
+                generate_badge_preview(first_path, badge_data, out_path, style=style, script_dir=self._script_dir)
                 if isinstance(first, dict):
                     images_list[idx] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
                 else:
