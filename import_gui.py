@@ -30,21 +30,53 @@ import uuid
 import time
 from deep_translator import GoogleTranslator
 
+# Max imagini per produs în CSV. Imagini sunt deja uploadate de script pe WordPress;
+# CSV conține doar link-uri către aceste imagini – limitarea reduce volumul per rând la import.
+MAX_IMAGES_IN_CSV = 5
+
 # Coduri categorie manuale (sku_list: link | COD) – prioritate față de Ollama
-# Cum adaugi un cod nou (dacă descoperi un prefix TOOL/BAT/etc. care nu e în legenda din sku_list.txt):
-#   Adaugă o linie: 'COD': {'cat': 'Nume Categorie', 'parent': None sau 'Accesorii Service', 'prefix': 'COD'},
-#   parent=None → categorie "Piese {Brand} > NumeCategorie {Brand}"; parent='Accesorii Service' → "Accesorii Service > NumeCategorie"
+# Ierarhie: PIESE 3 niveluri (Piese > Piese {Brand} > Tip), UNELTE/ACCESORII 2 niveluri
 CATEGORY_CODE_MAP = {
-    'SCR': {'cat': 'Ecrane', 'parent': None, 'prefix': 'SCR'},           # Ecrane / Display
-    'BAT': {'cat': 'Baterii', 'parent': None, 'prefix': 'BAT'},
-    'CHG': {'cat': 'Mufe Incarcare', 'parent': None, 'prefix': 'CHG'},   # Mufe / Încărcare
-    'FLX': {'cat': 'Flexuri', 'parent': None, 'prefix': 'FLX'},
-    'STC': {'cat': 'Sticla', 'parent': None, 'prefix': 'STC'},           # Sticlă / Geam
-    'CAM': {'cat': 'Camere', 'parent': None, 'prefix': 'CAM'},
-    'TOOL': {'cat': 'Unelte', 'parent': 'Accesorii Service', 'prefix': 'TOOL'},
-    'EQP': {'cat': 'Echipamente', 'parent': 'Accesorii Service', 'prefix': 'EQP'},
-    'CNS': {'cat': 'Consumabile', 'parent': 'Accesorii Service', 'prefix': 'CNS'},
+    'SCR': {'cat': 'Ecrane', 'top': 'Piese', 'prefix': 'SCR'},
+    'BAT': {'cat': 'Baterii', 'top': 'Piese', 'prefix': 'BAT'},
+    'CHG': {'cat': 'Mufe Încărcare', 'top': 'Piese', 'prefix': 'CHG'},
+    'FLX': {'cat': 'Flexuri', 'top': 'Piese', 'prefix': 'FLX'},
+    'STC': {'cat': 'Sticlă', 'top': 'Piese', 'prefix': 'STC'},
+    'CAM': {'cat': 'Camere', 'top': 'Piese', 'prefix': 'CAM'},
+    'TOOL': {'cat': 'Unelte', 'prefix': 'TOOL'},   # subcateg din nume: Șurubelnițe, Pensete, etc.
+    'EQP': {'cat': 'Unelte', 'prefix': 'EQP'},     # subcateg: Separatoare Ecrane / Microscoape
+    'CNS': {'cat': 'Accesorii', 'sub': 'Adezivi & Consumabile', 'prefix': 'CNS'},
 }
+
+# Detectare tip piesă (nivel 3 sub Piese) – ordinea contează
+PIESE_TIP_KEYWORDS = (
+    (['ecran', 'display', 'lcd', 'oled', 'screen', 'digitizer'], 'Ecrane'),
+    (['baterie', 'battery', 'acumulator'], 'Baterii'),
+    (['camera', 'cameră', 'lens'], 'Camere'),
+    (['mufa', 'charging port', 'dock', 'usb-c', 'lightning', 'conector încărcare'], 'Mufe Încărcare'),
+    (['flex', 'cable', 'cablu', 'ribbon'], 'Flexuri'),
+    (['sticla', 'glass', 'geam', 'back glass'], 'Sticlă'),
+    (['casca', 'speaker', 'earpiece', 'difuzor'], 'Difuzoare'),
+    (['buton', 'button', 'power', 'volume', 'home'], 'Butoane'),
+    (['carcasa', 'housing', 'frame', 'back cover', 'carcase'], 'Carcase'),
+)
+
+# Unelte: subcategorii nivel 2 (Unelte > Subcategorie)
+UNELTE_SUBCAT_KEYWORDS = (
+    (['șurubelniță', 'surubelnita', 'screwdriver', 'screw driver'], 'Șurubelnițe'),
+    (['pensetă', 'penseta', 'tweezer', 'pry', 'spudger'], 'Pensete'),
+    (['stație lipit', 'statie lipit', 'soldering', 'preheater', 'rework station', 'hot air'], 'Stații Lipit'),
+    (['separator', 'separator ecran', 'screen separator'], 'Separatoare Ecrane'),
+    (['microscop', 'microscope', 'lupa'], 'Microscoape'),
+)
+
+# Accesorii: subcategorii nivel 2 (Accesorii > Subcategorie)
+ACCESORII_SUBCAT_KEYWORDS = (
+    (['husă', 'husa', 'case', 'carcasă', 'carcasa', 'housing', 'cover', 'back cover'], 'Huse & Carcase'),
+    (['folie', 'screen protector', 'protector ecran', 'tempered glass'], 'Folii Protecție'),
+    (['cabl', 'cable', 'încărcător', 'incarcator', 'charger', 'adaptor'], 'Cabluri & Încărcătoare'),
+    (['adeziv', 'banda', 'tape', 'b7000', 'consumabil', 'oca', 'loca'], 'Adezivi & Consumabile'),
+)
 
 class ImportProduse:
     def __init__(self, root):
@@ -367,20 +399,27 @@ class ImportProduse:
             'WOOCOMMERCE_CONSUMER_SECRET': '',
             'EXCHANGE_RATE': '4.97',
             'OLLAMA_URL': '',
-            'OLLAMA_MODEL': 'llama3.2'
+            'OLLAMA_MODEL': 'llama3.2',
+            'OLLAMA_TIMEOUT': 300
         }
         
         # Încarcă din .env dacă există
         if self.env_file.exists():
             try:
                 load_dotenv(self.env_file)
+                _ollama_timeout = os.getenv('OLLAMA_TIMEOUT', '300').strip()
+                try:
+                    _ollama_timeout = int(_ollama_timeout)
+                except ValueError:
+                    _ollama_timeout = 300
                 self.config = {
                     'WOOCOMMERCE_URL': os.getenv('WOOCOMMERCE_URL', 'https://webgsm.ro'),
                     'WOOCOMMERCE_CONSUMER_KEY': os.getenv('WOOCOMMERCE_CONSUMER_KEY', ''),
                     'WOOCOMMERCE_CONSUMER_SECRET': os.getenv('WOOCOMMERCE_CONSUMER_SECRET', ''),
                     'EXCHANGE_RATE': os.getenv('EXCHANGE_RATE', '4.97'),
                     'OLLAMA_URL': os.getenv('OLLAMA_URL', '').strip(),
-                    'OLLAMA_MODEL': os.getenv('OLLAMA_MODEL', 'llama3.2').strip() or 'llama3.2'
+                    'OLLAMA_MODEL': os.getenv('OLLAMA_MODEL', 'llama3.2').strip() or 'llama3.2',
+                    'OLLAMA_TIMEOUT': max(120, min(_ollama_timeout, 600))
                 }
                 print(f"✓ Config încărcat din .env: {self.config}")
             except Exception as e:
@@ -426,6 +465,7 @@ class ImportProduse:
             # Crează sau actualizează .env (păstrăm OLLAMA_* ca să nu se piardă la Salvează Config)
             ollama_url = self.config.get('OLLAMA_URL', '')
             ollama_model = self.config.get('OLLAMA_MODEL', 'llama3.1:latest') or 'llama3.1:latest'
+            ollama_timeout = self.config.get('OLLAMA_TIMEOUT', 300)
             with open(self.env_file, 'w', encoding='utf-8') as f:
                 f.write(f"WOOCOMMERCE_URL={url}\n")
                 f.write(f"WOOCOMMERCE_CONSUMER_KEY={key}\n")
@@ -434,6 +474,7 @@ class ImportProduse:
                 f.write("\n# Ollama (traducere nume slug / Componentă)\n")
                 f.write(f"OLLAMA_URL={ollama_url}\n")
                 f.write(f"OLLAMA_MODEL={ollama_model}\n")
+                f.write(f"OLLAMA_TIMEOUT={ollama_timeout}\n")
             
             # Actualizează config intern
             self.config = {
@@ -442,7 +483,8 @@ class ImportProduse:
                 'WOOCOMMERCE_CONSUMER_SECRET': secret,
                 'EXCHANGE_RATE': rate,
                 'OLLAMA_URL': ollama_url,
-                'OLLAMA_MODEL': ollama_model
+                'OLLAMA_MODEL': ollama_model,
+                'OLLAMA_TIMEOUT': ollama_timeout
             }
             
             # Resetează API pentru a folosi noile credențiale
@@ -904,115 +946,101 @@ class ImportProduse:
             return f"{tip}-{brand}"
         return tip
 
+    def _detect_brand_for_category(self, name_lower):
+        """Inferă brandul pentru ramura Piese (Piese > Piese {Brand} > ...)."""
+        if 'iphone' in name_lower or 'apple' in name_lower:
+            return 'iPhone'
+        if 'samsung' in name_lower or 'galaxy' in name_lower:
+            return 'Samsung'
+        if 'huawei' in name_lower or 'honor' in name_lower:
+            return 'Huawei'
+        if 'xiaomi' in name_lower or 'redmi' in name_lower or 'poco' in name_lower:
+            return 'Xiaomi'
+        if 'google' in name_lower or 'pixel' in name_lower:
+            return 'Google'
+        if 'oneplus' in name_lower:
+            return 'OnePlus'
+        if 'motorola' in name_lower or 'moto ' in name_lower:
+            return 'Motorola'
+        if 'ipad' in name_lower:
+            return 'iPad'
+        return None
+
+    def _detect_piese_tip(self, combined):
+        """Detectează tipul piesei (nivel 3 sub Piese) din text."""
+        for keywords, tip_name in PIESE_TIP_KEYWORDS:
+            if any(kw in combined for kw in keywords):
+                return tip_name
+        return 'Alte Piese'
+
+    def _detect_unelte_sub(self, combined):
+        """Detectează subcategoria Unelte (Unelte > Subcategorie)."""
+        for keywords, sub_name in UNELTE_SUBCAT_KEYWORDS:
+            if any(kw in combined for kw in keywords):
+                return sub_name
+        return 'Șurubelnițe'  # default
+
+    def _detect_accesorii_sub(self, combined):
+        """Detectează subcategoria Accesorii (Accesorii > Subcategorie)."""
+        for keywords, sub_name in ACCESORII_SUBCAT_KEYWORDS:
+            if any(kw in combined for kw in keywords):
+                return sub_name
+        return 'Adezivi & Consumabile'  # default
+
     def get_woo_category(self, product_name, product_type='', manual_code=None):
         """
-        Returnează categoria WooCommerce în format ierarhic (max 2 nivele).
-        WebGSM: Brand > Tip Piesă. Atributele (Model, Calitate, Brand Piesa) sunt pentru filtrare, nu categorii.
-        Dacă manual_code este setat (din sku_list: link | COD), categoria vine din CATEGORY_CODE_MAP;
-        Ollama nu poate schimba categoria, doar brand-ul se poate extrage din titlu.
+        Returnează categoria WooCommerce în format ierarhic:
+        - PIESE (3 nivele): Piese > Piese iPhone > Ecrane
+        - UNELTE (2 nivele): Unelte > Șurubelnițe
+        - ACCESORII (2 nivele): Accesorii > Adezivi & Consumabile
 
-        Args:
-            product_name: Numele produsului (ex: "Baterie pentru iPhone 14 Pro")
-            product_type: Tipul din descriere/titlu RO (ex: "Baterie", "Ecran")
-            manual_code: Cod optional din sku_list (ex: BAT, SCR) – prioritate față de detectare automată
-
-        Returns:
-            String format "Parent > Child" (ex: "Piese iPhone > Baterii iPhone")
+        Dacă manual_code este setat (sku_list: link | COD), se folosește maparea COD; altfel se detectează din nume.
         """
         name_lower = (product_name or '').lower()
         type_lower = (product_type or '').lower()
         combined = name_lower + ' ' + type_lower
 
-        # Prioritate: cod manual din sku_list (link | COD)
+        # —— Prioritate: cod manual din sku_list (link | COD) ——
         if manual_code and isinstance(manual_code, str):
             manual_code = manual_code.strip().upper()
             if manual_code in CATEGORY_CODE_MAP:
                 m = CATEGORY_CODE_MAP[manual_code]
-                cat_name = m.get('cat', '')
-                parent = m.get('parent')
-                if parent:
-                    return f"{parent} > {cat_name}"
-                # Piese {Brand} > {Cat} {Brand} – inferăm brand din product_name
-                brand_suffix = ''
-                if 'iphone' in name_lower or 'apple' in name_lower:
-                    brand_suffix = 'iPhone'
-                elif 'samsung' in name_lower or 'galaxy' in name_lower:
-                    brand_suffix = 'Samsung'
-                elif 'huawei' in name_lower or 'honor' in name_lower:
-                    brand_suffix = 'Huawei'
-                elif 'xiaomi' in name_lower or 'redmi' in name_lower or 'poco' in name_lower:
-                    brand_suffix = 'Xiaomi'
-                elif 'google' in name_lower or 'pixel' in name_lower:
-                    brand_suffix = 'Google'
-                elif 'oneplus' in name_lower:
-                    brand_suffix = 'OnePlus'
-                elif 'motorola' in name_lower or 'moto ' in name_lower:
-                    brand_suffix = 'Motorola'
-                elif 'ipad' in name_lower:
-                    brand_suffix = 'iPad'
-                else:
-                    brand_suffix = 'Generic'
-                return f"Piese {brand_suffix} > {cat_name} {brand_suffix}"
+                top = m.get('top') or m.get('cat')
+                if top == 'Piese':
+                    cat_name = m.get('cat', '')
+                    brand = self._detect_brand_for_category(name_lower) or 'Generic'
+                    return f"Piese > Piese {brand} > {cat_name}"
+                if manual_code == 'TOOL':
+                    sub = self._detect_unelte_sub(combined)
+                    return f"Unelte > {sub}"
+                if manual_code == 'EQP':
+                    sub = 'Microscoape' if 'microscop' in combined else 'Separatoare Ecrane'
+                    return f"Unelte > {sub}"
+                if manual_code == 'CNS' or m.get('sub'):
+                    return f"Accesorii > {m.get('sub', 'Adezivi & Consumabile')}"
+                # fallback vechi
+                if m.get('cat') == 'Unelte':
+                    return f"Unelte > {self._detect_unelte_sub(combined)}"
+                return f"Accesorii > {m.get('sub', 'Adezivi & Consumabile')}"
 
-        brand_parent = ''
-        brand_suffix = ''
+        # —— Auto: detectare brand + tip pentru PIESE (3 nivele) ——
+        brand = self._detect_brand_for_category(name_lower)
+        if brand:
+            tip = self._detect_piese_tip(combined)
+            return f"Piese > Piese {brand} > {tip}"
 
-        if 'iphone' in name_lower or 'apple' in name_lower:
-            brand_parent = 'Piese iPhone'
-            brand_suffix = 'iPhone'
-        elif 'samsung' in name_lower or 'galaxy' in name_lower:
-            brand_parent = 'Piese Samsung'
-            brand_suffix = 'Samsung'
-        elif 'huawei' in name_lower or 'honor' in name_lower:
-            brand_parent = 'Piese Huawei'
-            brand_suffix = 'Huawei'
-        elif 'xiaomi' in name_lower or 'redmi' in name_lower or 'poco' in name_lower:
-            brand_parent = 'Piese Xiaomi'
-            brand_suffix = 'Xiaomi'
-        elif 'google' in name_lower or 'pixel' in name_lower:
-            brand_parent = 'Piese Google'
-            brand_suffix = 'Google'
-        elif 'oneplus' in name_lower:
-            brand_parent = 'Piese OnePlus'
-            brand_suffix = 'OnePlus'
-        elif 'motorola' in name_lower or 'moto ' in name_lower:
-            brand_parent = 'Piese Motorola'
-            brand_suffix = 'Motorola'
-        elif 'ipad' in name_lower:
-            brand_parent = 'Piese iPad'
-            brand_suffix = 'iPad'
+        # —— Auto: UNELTE (2 nivele) ——
+        for keywords, _ in UNELTE_SUBCAT_KEYWORDS:
+            if any(kw in combined for kw in keywords):
+                sub = self._detect_unelte_sub(combined)
+                return f"Unelte > {sub}"
+        if any(x in combined for x in ['tool', 'unealtă', 'unealta', 'statie', 'station', 'preheater', 'separator', 'microscop', 'tester', 'diagnostic']):
+            sub = self._detect_unelte_sub(combined)
+            return f"Unelte > {sub}"
 
-        if brand_parent:
-            if any(x in combined for x in ['ecran', 'display', 'lcd', 'oled', 'screen']):
-                return f'{brand_parent} > Ecrane {brand_suffix}'
-            elif any(x in combined for x in ['baterie', 'battery', 'acumulator']):
-                return f'{brand_parent} > Baterii {brand_suffix}'
-            elif any(x in combined for x in ['mufa', 'charging port', 'dock', 'usb-c', 'lightning', 'conector încărcare']):
-                return f'{brand_parent} > Mufe Încărcare {brand_suffix}'
-            elif any(x in combined for x in ['camera', 'cameră', 'lens']):
-                return f'{brand_parent} > Camere {brand_suffix}'
-            elif any(x in combined for x in ['flex', 'cable', 'cablu']):
-                return f'{brand_parent} > Flexuri {brand_suffix}'
-            elif any(x in combined for x in ['casca', 'speaker', 'earpiece', 'difuzor']):
-                return f'{brand_parent} > Difuzoare {brand_suffix}'
-            elif any(x in combined for x in ['buton', 'button', 'power', 'volume', 'home']):
-                return f'{brand_parent} > Butoane {brand_suffix}'
-            elif any(x in combined for x in ['sticla', 'glass', 'geam']):
-                return f'{brand_parent} > Sticlă {brand_suffix}'
-            elif any(x in combined for x in ['carcasa', 'housing', 'frame', 'back cover', 'back glass']):
-                return f'{brand_parent} > Carcase {brand_suffix}'
-            else:
-                return f'{brand_parent} > Alte Piese {brand_suffix}'
-
-        # Accesorii Service (fără brand telefon)
-        if any(x in combined for x in ['unealta', 'tool', 'surubelnita', 'șurubelniță', 'pry', 'tweezer', 'screwdriver']):
-            return 'Accesorii Service > Unelte'
-        elif any(x in combined for x in ['statie', 'station', 'preheater', 'microscop', 'separator', 'tester', 'diagnostic']):
-            return 'Accesorii Service > Echipamente'
-        elif any(x in combined for x in ['adeziv', 'banda', 'tape', 'oca', 'loca', 'consumabil']):
-            return 'Accesorii Service > Consumabile'
-        else:
-            return 'Accesorii Service'
+        # —— Auto: ACCESORII (2 nivele) ——
+        sub = self._detect_accesorii_sub(combined)
+        return f"Accesorii > {sub}"
 
     def extract_phone_model(self, product_name):
         """
@@ -1653,11 +1681,12 @@ class ImportProduse:
         else:
             prompt = "Translate to Romanian. Output ONLY the Romanian text, nothing else.\n\nEnglish: "
         prompt += text.strip()
+        timeout_sec = self.config.get('OLLAMA_TIMEOUT', 300)
         try:
             r = requests.post(
                 url,
                 json={"model": model, "prompt": prompt, "stream": False},
-                timeout=60
+                timeout=min(90, timeout_sec)
             )
             r.raise_for_status()
             out = r.json().get("response", "").strip()
@@ -1699,51 +1728,59 @@ SEO_DESC: <one line, max 155 chars>
 FOCUS_KW: <one short phrase for SEO>
 TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură, Tester>
 TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g. wholesale screwdrivers -> șurubelnițe en-gros); otherwise suggest max 6 short tags; comma-separated, max 8 tags, grammatically correct Romanian>"""
-        try:
-            r = requests.post(
-                url,
-                json={"model": model, "prompt": prompt, "stream": False},
-                timeout=120
-            )
-            r.raise_for_status()
-            out = r.json().get("response", "").strip()
-            if not out:
+        timeout_sec = self.config.get('OLLAMA_TIMEOUT', 300)
+        for attempt in range(2):
+            try:
+                r = requests.post(
+                    url,
+                    json={"model": model, "prompt": prompt, "stream": False},
+                    timeout=timeout_sec
+                )
+                r.raise_for_status()
+                out = r.json().get("response", "").strip()
+                if not out:
+                    return None
+                out = self.fix_romanian_diacritics(out)
+                result = {}
+                desc_ro_lines = []
+                in_desc_ro = False
+                key_prefixes = ("NAME_RO:", "SHORT_DESC_RO:", "DESC_RO:", "SEO_TITLE:", "SEO_DESC:", "FOCUS_KW:", "TIP_PRODUS:", "TAGS_RO:")
+                for line in out.splitlines():
+                    line_stripped = line.strip()
+                    if line_stripped.startswith("NAME_RO:"):
+                        in_desc_ro = False
+                        result["name_ro"] = line_stripped[8:].strip()
+                    elif line_stripped.startswith("SHORT_DESC_RO:"):
+                        in_desc_ro = False
+                        result["short_desc_ro"] = line_stripped[14:].strip()[:160]
+                    elif line_stripped.startswith("DESC_RO:"):
+                        in_desc_ro = True
+                        desc_ro_lines = [line_stripped[8:].strip()]
+                    elif in_desc_ro and not any(line_stripped.startswith(p) for p in key_prefixes if p != "DESC_RO:"):
+                        desc_ro_lines.append(line_stripped)
+                    elif line_stripped.startswith("SEO_TITLE:"):
+                        in_desc_ro = False
+                        result["seo_title"] = line_stripped[10:].strip()[:60]
+                    elif line_stripped.startswith("SEO_DESC:"):
+                        result["seo_desc"] = line_stripped[9:].strip()[:160]
+                    elif line_stripped.startswith("FOCUS_KW:"):
+                        result["focus_kw"] = line_stripped[9:].strip()
+                    elif line_stripped.startswith("TIP_PRODUS:"):
+                        result["tip_produs"] = line_stripped[11:].strip()
+                    elif line_stripped.startswith("TAGS_RO:"):
+                        result["tags_ro"] = line_stripped[8:].strip()[:500]
+                if desc_ro_lines:
+                    result["desc_ro"] = " ".join(desc_ro_lines).replace("|", "\n").strip()[:3000]
+                if result.get("name_ro"):
+                    return result
                 return None
-            out = self.fix_romanian_diacritics(out)
-            result = {}
-            desc_ro_lines = []
-            in_desc_ro = False
-            key_prefixes = ("NAME_RO:", "SHORT_DESC_RO:", "DESC_RO:", "SEO_TITLE:", "SEO_DESC:", "FOCUS_KW:", "TIP_PRODUS:", "TAGS_RO:")
-            for line in out.splitlines():
-                line_stripped = line.strip()
-                if line_stripped.startswith("NAME_RO:"):
-                    in_desc_ro = False
-                    result["name_ro"] = line_stripped[8:].strip()
-                elif line_stripped.startswith("SHORT_DESC_RO:"):
-                    in_desc_ro = False
-                    result["short_desc_ro"] = line_stripped[14:].strip()[:160]
-                elif line_stripped.startswith("DESC_RO:"):
-                    in_desc_ro = True
-                    desc_ro_lines = [line_stripped[8:].strip()]
-                elif in_desc_ro and not any(line_stripped.startswith(p) for p in key_prefixes if p != "DESC_RO:"):
-                    desc_ro_lines.append(line_stripped)
-                elif line_stripped.startswith("SEO_TITLE:"):
-                    in_desc_ro = False
-                    result["seo_title"] = line_stripped[10:].strip()[:60]
-                elif line_stripped.startswith("SEO_DESC:"):
-                    result["seo_desc"] = line_stripped[9:].strip()[:160]
-                elif line_stripped.startswith("FOCUS_KW:"):
-                    result["focus_kw"] = line_stripped[9:].strip()
-                elif line_stripped.startswith("TIP_PRODUS:"):
-                    result["tip_produs"] = line_stripped[11:].strip()
-                elif line_stripped.startswith("TAGS_RO:"):
-                    result["tags_ro"] = line_stripped[8:].strip()[:500]
-            if desc_ro_lines:
-                result["desc_ro"] = " ".join(desc_ro_lines).replace("|", "\n").strip()[:3000]
-            if result.get("name_ro"):
-                return result
-        except Exception as e:
-            self.log(f"⚠ Ollama (câmpuri produs): {e}", "WARNING")
+            except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+                self.log(f"⚠ Ollama timeout ({timeout_sec}s)" + (" – reîncerc..." if attempt == 0 else f": {e}"), "WARNING")
+                if attempt == 1:
+                    return None
+            except Exception as e:
+                self.log(f"⚠ Ollama (câmpuri produs): {e}", "WARNING")
+                return None
         return None
 
     def translate_text(self, text, source='en', target='ro'):
@@ -1796,7 +1833,55 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
         except Exception as e:
             self.log(f"⚠ Eroare traducere: {e}", "WARNING")
             return text  # Returnează textul original dacă traducerea eșuează
-    
+
+    def _tags_look_like_nav(self, tags_str):
+        """True dacă tag-urile par a fi din meniu/navigare/footer (Eroare, Europa, Despre, Servicii...)."""
+        if not tags_str or not tags_str.strip():
+            return False
+        nav_phrases = (
+            'eroare', 'europa', 'statele unite', 'canada', 'regatul unit', 'despre', 'servicii',
+            'mărcile noastre', 'asistență', 'bună ziua', 'contact', 'error', 'europe',
+            'united states', 'united kingdom', 'about', 'support', 'hello', 'our brands'
+        )
+        low = tags_str.lower()
+        hits = sum(1 for p in nav_phrases if p in low)
+        return hits >= 2
+
+    def _generate_fallback_tags(self, product_name_ro, categories, pa_model, pa_calitate, pa_tehnologie, tip_ro):
+        """Generează tag-uri relevante din nume, categorie și atribute (când Ollama lipsește sau tag-urile sunt invalide)."""
+        parts = []
+        name = (product_name_ro or '').strip()
+        if name:
+            # Cuvinte relevante din nume (ex: Ecran iPhone 15 Pro Max Aftermarket → ecran, iphone 15 pro max, aftermarket)
+            for word in re.split(r'[\s,]+', name):
+                w = word.strip()
+                if len(w) >= 2 and len(w) <= 40 and w.lower() not in ('si', 'și', 'cu', 'pentru', 'din', 'de', 'la'):
+                    parts.append(w)
+        if categories:
+            # Din "Piese > Piese iPhone > Ecrane" luăm "Piese", "iPhone", "Ecrane"
+            for chunk in re.split(r'\s*>\s*', categories):
+                for w in re.split(r'[\s,]+', chunk):
+                    w = w.strip()
+                    if w and len(w) >= 2 and w not in ('Piese', 'Accesorii', 'Unelte') and w not in parts:
+                        parts.append(w)
+        if pa_model and pa_model not in parts:
+            parts.append(pa_model)
+        if pa_calitate and pa_calitate not in ('Aftermarket', '') and pa_calitate not in parts:
+            parts.append(pa_calitate)
+        if pa_tehnologie and pa_tehnologie not in parts:
+            parts.append(pa_tehnologie)
+        if tip_ro and tip_ro not in parts:
+            parts.append(tip_ro)
+        # Unic, max 10 tag-uri
+        seen = set()
+        out = []
+        for p in parts:
+            key = p.lower().strip()
+            if key and key not in seen and len(out) < 10:
+                seen.add(key)
+                out.append(p)
+        return ', '.join(out) if out else (tip_ro or 'piese')
+
     def export_to_csv(self, products_data, filename="export_produse.csv"):
         """Exportă produsele în CSV format WebGSM cu atribute, ACF meta și SEO Rank Math"""
         import csv
@@ -1969,6 +2054,11 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         image_urls.sort(key=lambda x: x[0])
                         image_urls = [url for _, url in image_urls]
 
+                    # Limită nr. de link-uri (imagini deja pe site) în CSV – mai puține = import mai rapid
+                    if len(image_urls) > MAX_IMAGES_IN_CSV:
+                        image_urls = image_urls[:MAX_IMAGES_IN_CSV]
+                        self.log(f"   📷 CSV: max {MAX_IMAGES_IN_CSV} imagini/produs (import mai rapid)", "INFO")
+
                     # Calculează preț vânzare RON: achiziție EUR → RON → adaos 40% → TVA 19%
                     price_eur = product['price']
                     # Preț achiziție în LEI cu TVA: EUR × 5.1 (curs) × 1.21 (TVA achiziție 21%)
@@ -2107,13 +2197,20 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     ic_movable_val = '0'
                     truetone_val = '0'
 
-                    # Tags: din Ollama (TAGS_RO) sau traducere tag-uri existente (EN → RO)
+                    # Tags: din Ollama (TAGS_RO); dacă lipsesc sau sunt „nav/footer”, generăm din nume/categorie
                     if ollama_data and ollama_data.get('tags_ro'):
                         tags_value = self.curata_text(ollama_data['tags_ro'].strip())[:500]
                     else:
                         tags_value = product.get('tags', '')
                         if tags_value:
                             tags_value = self.translate_text(tags_value, source='en', target='ro')
+                        # Detectare tag-uri greșite (navigare/footer: Eroare, Europa, Despre, Servicii...)
+                        if self._tags_look_like_nav(tags_value):
+                            tags_value = ''
+                        if not tags_value or not tags_value.strip():
+                            tags_value = self._generate_fallback_tags(
+                                longtail_title, categories, pa_model, pa_calitate, pa_tehnologie, tip_ro
+                            )
 
                     row = {
                         'ID': '',
@@ -2175,6 +2272,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"✓ CSV WebGSM creat cu succes: {csv_path}", "SUCCESS")
             self.log(f"   📊 Total produse exportate: {len(products_data)}", "INFO")
             self.log(f"   📋 Coloane CSV: {len(fieldnames)} (atribute + ACF + SEO)", "INFO")
+            if len(products_data) > 30:
+                self.log(f"   💡 Import mai rapid pe site: importă în batch-uri (ex. 30–50 produse/CSV) sau mărește max_execution_time pe server.", "INFO")
             return str(csv_path)
 
         except Exception as e:
@@ -2829,21 +2928,28 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 generated_sku = sku_base
                 self.log(f"   ✓ SKU generat din URL: {generated_sku}", "INFO")
             
-            # Tag-uri: mai întâi din pagină (rubrica MobileSentrix: "Tag" → wholesale screwdrivers, cell phone screwdriver supplier)
+            # Tag-uri: din pagină, dar excludem text de tip nav/footer (Error, Europe, About, Services, etc.)
             tags = []
+            tag_nav_blocklist = (
+                'error', 'eroare', 'europe', 'europa', 'united states', 'statele unite', 'canada',
+                'united kingdom', 'regatul unit', 'about', 'despre', 'services', 'servicii',
+                'our brands', 'mărcile noastre', 'support', 'asistență', 'hello', 'bună ziua',
+                'contact', 'contact us', 'choose your country', 'log in', 'copy', 'share'
+            )
             tag_selectors = [
                 '.product-tags a', '.tags a', '[data-label="Tags"] a',
                 '.product-info-tags a', '.product-details-tags a', '.item-tags a',
-                'a[href*="/tag/"]', '.tag-list a', '.product-info-main a[href*="tag"]',
-                'div.product-info a[href*="catalogsearch"]'
+                '.tag-list a', '.product-info-main a[href*="tag"]',
             ]
             for tag_sel in tag_selectors:
                 tag_elems = product_soup.select(tag_sel)
                 if tag_elems:
                     for t in tag_elems:
                         txt = t.get_text(strip=True)
-                        if txt and 2 < len(txt) < 80 and txt.lower() not in [x.lower() for x in tags]:
-                            tags.append(txt)
+                        low = (txt or '').lower()
+                        if txt and 2 < len(txt) < 80 and low not in [x.lower() for x in tags]:
+                            if not any(bl in low for bl in tag_nav_blocklist):
+                                tags.append(txt)
                     if tags:
                         self.log(f"   🏷️ Tag-uri extrase din pagină: {len(tags)}", "INFO")
                         break

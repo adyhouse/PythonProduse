@@ -39,6 +39,15 @@
 5. Asociază imaginile (din folderul images/)
 
 
+⚡ IMPORT MAI RAPID (dacă importul e foarte lent):
+--------------------------------------------------
+• Imagini sunt deja pe site (uploadate de script); CSV-ul are doar link-uri către ele.
+• Scriptul pune max 5 link-uri imagini/produs în CSV (MAX_IMAGES_IN_CSV) – mai puține = import mai rapid.
+• Importă în batch-uri: împarte CSV-ul în fișiere de 30–50 produse, importă unul câte unul.
+• Pe server (cPanel / PHP): mărește max_execution_time (ex. 300) și memory_limit (ex. 256M).
+• WooCommerce → Produse → Import: la „Run the importer” așteaptă; nu închide pagina până la final.
+
+
 ═══════════════════════════════════════════════════════
 VERSIUNE: CSV Export (Modificată 17.01.2026)
 ═══════════════════════════════════════════════════════
