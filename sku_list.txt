@@ -1,27 +1,43 @@
 # Lista LINK-URI sau EAN-uri pentru import
 # Poți pune:
 #   - Link-uri directe din MobileSentrix (RECOMANDAT!)
-#   - SAU link + cod categorie: URL | COD  (ex: https://... | BAT)
+#   - SAU link + cod categorie: URL | COD  (dubla verificare – identifici categoria manual)
 #   - SAU EAN-uri (dacă există în căutare)
 #   - SAU SKU MobileSentrix (12-14 cifre)
 #
-# === LEGENDA CODURI CATEGORIE – format în fișier: link | COD ===
-# Exemplu cum trebuie să arate o linie (link + spațiu + pipe + spațiu + COD):
+# === LEGENDA CODURI CATEGORIE – format: link | COD (verificare manuală) ===
+# Exemplu: https://www.mobilesentrix.eu/ecran-iphone-14 | SCR
 #
-# https://www.mobilesentrix.eu/ecran-iphone-14 |           | SCR     → Ecrane / Display
-# https://www.mobilesentrix.eu/baterie-iphone-14 |         | BAT   → Baterii
-# https://www.mobilesentrix.eu/mufa-incarcare-iphone |     | CHG   → Mufe / Încărcare
-# https://www.mobilesentrix.eu/flex-display-iphone |       | FLX   → Flex-uri diverse
-# https://www.mobilesentrix.eu/sticla-spate-iphone |       | STC   → Sticlă / Geam
-# https://www.mobilesentrix.eu/camera-spate-iphone |       | CAM   → Camere Foto
-# https://www.mobilesentrix.eu/surubelnita-xiaomi |        | TOOL  → Unelte / Scule
-# https://www.mobilesentrix.eu/tester-ibridge |            | EQP   → Echipamente / Testere
-# https://www.mobilesentrix.eu/adeziv-b7000 |              | CNS   → Consumabile (Adeziv)
+# --- PIESE (3 nivele: Piese > Piese {Brand} > Tip) ---
+# SCR   → Ecrane
+# BAT   → Baterii
+# CAM   → Camere
+# CHG   → Mufe Încărcare
+# FLX   → Flexuri
+# SPK   → Difuzoare
+# CAS   → Carcase
+# STC   → Sticlă
 #
-# === Dacă descoperi un prefix nou care nu e în legendă:
-#    Adaugă în import_gui.py în dicționarul CATEGORY_CODE_MAP o linie:
-#    'COD': {'cat': 'Nume Categorie', 'parent': None sau 'Accesorii Service', 'prefix': 'COD'},
+# --- UNELTE (2 nivele: Unelte > Subcategorie) ---
+# TOOL  → Șurubelnițe
+# PENS  → Pensete
+# SOLD  → Stații Lipit
+# SEP   → Separatoare Ecrane
+# MICRO → Microscoape
+# PROG  → Programatoare
+# KIT   → Kituri Complete
+# EQP   → (subcateg din nume: Microscoape / Separatoare Ecrane)
+#
+# --- ACCESORII (2 nivele: Accesorii > Subcategorie) ---
+# HUSA  → Huse & Carcase
+# FOIL  → Folii Protecție
+# CBL   → Cabluri & Încărcătoare
+# CNS   → Adezivi & Consumabile
+#
+# === Dacă descoperi un cod nou care nu e în legendă:
+#    Adaugă în import_gui.py în CATEGORY_CODE_MAP:
+#    'COD': {'cat': '...', 'top': 'Piese' sau 'sub': '...', 'prefix': 'COD'},
 # ===
 #
-# Link-uri de produse. Format: link | COD (ex: | CAM pentru cameră)
+# Link-uri de produse (format: link | COD pentru dubla verificare categorie):
 https://www.mobilesentrix.eu/back-camera-compatible-for-iphone-17-pro-17-pro-max | CAM

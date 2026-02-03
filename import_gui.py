@@ -37,46 +37,65 @@ MAX_IMAGES_IN_CSV = 5
 # Coduri categorie manuale (sku_list: link | COD) – prioritate față de Ollama
 # Ierarhie: PIESE 3 niveluri (Piese > Piese {Brand} > Tip), UNELTE/ACCESORII 2 niveluri
 CATEGORY_CODE_MAP = {
+    # PIESE (3 nivele)
     'SCR': {'cat': 'Ecrane', 'top': 'Piese', 'prefix': 'SCR'},
     'BAT': {'cat': 'Baterii', 'top': 'Piese', 'prefix': 'BAT'},
+    'CAM': {'cat': 'Camere', 'top': 'Piese', 'prefix': 'CAM'},
     'CHG': {'cat': 'Mufe Încărcare', 'top': 'Piese', 'prefix': 'CHG'},
     'FLX': {'cat': 'Flexuri', 'top': 'Piese', 'prefix': 'FLX'},
+    'SPK': {'cat': 'Difuzoare', 'top': 'Piese', 'prefix': 'SPK'},
+    'CAS': {'cat': 'Carcase', 'top': 'Piese', 'prefix': 'CAS'},
     'STC': {'cat': 'Sticlă', 'top': 'Piese', 'prefix': 'STC'},
-    'CAM': {'cat': 'Camere', 'top': 'Piese', 'prefix': 'CAM'},
-    'TOOL': {'cat': 'Unelte', 'prefix': 'TOOL'},   # subcateg din nume: Șurubelnițe, Pensete, etc.
-    'EQP': {'cat': 'Unelte', 'prefix': 'EQP'},     # subcateg: Separatoare Ecrane / Microscoape
+    # UNELTE (2 nivele)
+    'TOOL': {'cat': 'Unelte', 'sub': 'Șurubelnițe', 'prefix': 'TOOL'},
+    'PENS': {'cat': 'Unelte', 'sub': 'Pensete', 'prefix': 'PENS'},
+    'SOLD': {'cat': 'Unelte', 'sub': 'Stații Lipit', 'prefix': 'SOLD'},
+    'SEP': {'cat': 'Unelte', 'sub': 'Separatoare Ecrane', 'prefix': 'SEP'},
+    'MICRO': {'cat': 'Unelte', 'sub': 'Microscoape', 'prefix': 'MICRO'},
+    'PROG': {'cat': 'Unelte', 'sub': 'Programatoare', 'prefix': 'PROG'},
+    'KIT': {'cat': 'Unelte', 'sub': 'Kituri Complete', 'prefix': 'KIT'},
+    'EQP': {'cat': 'Unelte', 'prefix': 'EQP'},
+    # ACCESORII (2 nivele)
+    'HUSA': {'cat': 'Accesorii', 'sub': 'Huse & Carcase', 'prefix': 'HUSA'},
+    'FOIL': {'cat': 'Accesorii', 'sub': 'Folii Protecție', 'prefix': 'FOIL'},
+    'CBL': {'cat': 'Accesorii', 'sub': 'Cabluri & Încărcătoare', 'prefix': 'CBL'},
     'CNS': {'cat': 'Accesorii', 'sub': 'Adezivi & Consumabile', 'prefix': 'CNS'},
 }
 
-# Detectare tip piesă (nivel 3 sub Piese) – ordinea contează
+# PIESE: tip piesă (nivel 3) – ordinea contează (cele mai specifice primele)
+# SCR, BAT, CAM, CHG, FLX, SPK, CAS conform mapării finale
 PIESE_TIP_KEYWORDS = (
-    (['ecran', 'display', 'lcd', 'oled', 'screen', 'digitizer'], 'Ecrane'),
-    (['baterie', 'battery', 'acumulator'], 'Baterii'),
-    (['camera', 'cameră', 'lens'], 'Camere'),
-    (['mufa', 'charging port', 'dock', 'usb-c', 'lightning', 'conector încărcare'], 'Mufe Încărcare'),
-    (['flex', 'cable', 'cablu', 'ribbon'], 'Flexuri'),
-    (['sticla', 'glass', 'geam', 'back glass'], 'Sticlă'),
-    (['casca', 'speaker', 'earpiece', 'difuzor'], 'Difuzoare'),
+    (['screen', 'display', 'lcd', 'oled', 'amoled', 'ecran', 'digitizer', 'touch'], 'Ecrane'),
+    (['battery', 'baterie', 'acumulator', 'mah'], 'Baterii'),
+    (['camera', 'cameră', 'megapixel', ' mp ', 'lens'], 'Camere'),
+    (['charging port', 'mufa', 'dock', 'connector', 'lightning', 'usb-c port', 'usb-c', 'conector încărcare'], 'Mufe Încărcare'),
+    (['flex', 'ribbon', 'cable flex', 'flex cable'], 'Flexuri'),
+    (['speaker', 'difuzor', 'earpiece', 'buzzer', 'ringer', 'casca'], 'Difuzoare'),
+    (['housing', 'frame', 'carcasa', 'back cover', 'back glass', 'chassis', 'carcase'], 'Carcase'),
+    (['sticla', 'glass', 'geam'], 'Sticlă'),
     (['buton', 'button', 'power', 'volume', 'home'], 'Butoane'),
-    (['carcasa', 'housing', 'frame', 'back cover', 'carcase'], 'Carcase'),
 )
 
-# Unelte: subcategorii nivel 2 (Unelte > Subcategorie)
+# UNELTE: subcategorii nivel 2 (Unelte > Subcategorie)
 UNELTE_SUBCAT_KEYWORDS = (
-    (['șurubelniță', 'surubelnita', 'screwdriver', 'screw driver'], 'Șurubelnițe'),
-    (['pensetă', 'penseta', 'tweezer', 'pry', 'spudger'], 'Pensete'),
-    (['stație lipit', 'statie lipit', 'soldering', 'preheater', 'rework station', 'hot air'], 'Stații Lipit'),
-    (['separator', 'separator ecran', 'screen separator'], 'Separatoare Ecrane'),
-    (['microscop', 'microscope', 'lupa'], 'Microscoape'),
+    (['screwdriver', 'surubelnita', 'șurubelniță', 'screw driver'], 'Șurubelnițe'),
+    (['tweezer', 'penseta', 'pensetă', 'pry', 'spudger'], 'Pensete'),
+    (['soldering', 'station', 'lipit', 'hot air', 'rework', 'preheater', 'rework station'], 'Stații Lipit'),
+    (['separator', 'separatoare', 'lcd separator', 'screen separator'], 'Separatoare Ecrane'),
+    (['microscop', 'microscope', 'magnifier', 'lupa'], 'Microscoape'),
+    (['programmer', 'programator', 'box', 'dongle', 'jc', 'jcid'], 'Programatoare'),
+    (['kit', 'set', 'tool set', 'repair kit'], 'Kituri Complete'),
 )
 
 # Accesorii: subcategorii nivel 2 (Accesorii > Subcategorie)
 ACCESORII_SUBCAT_KEYWORDS = (
-    (['husă', 'husa', 'case', 'carcasă', 'carcasa', 'housing', 'cover', 'back cover'], 'Huse & Carcase'),
-    (['folie', 'screen protector', 'protector ecran', 'tempered glass'], 'Folii Protecție'),
-    (['cabl', 'cable', 'încărcător', 'incarcator', 'charger', 'adaptor'], 'Cabluri & Încărcătoare'),
-    (['adeziv', 'banda', 'tape', 'b7000', 'consumabil', 'oca', 'loca'], 'Adezivi & Consumabile'),
+    (['case', 'husa', 'husă', 'cover', 'bumper', 'carcasă', 'carcasa', 'housing', 'back cover'], 'Huse & Carcase'),
+    (['protector', 'folie', 'tempered', 'glass protector', 'screen protector', 'protector ecran', 'uv film', 'film protector', 'matt privacy', 'privacy film'], 'Folii Protecție'),
+    (['cable', 'cablu', 'charger', 'încărcător', 'incarcator', 'usb', 'lightning cable', 'adapter', 'adaptor'], 'Cabluri & Încărcătoare'),
+    (['adhesive', 'adeziv', 'glue', 'b7000', 't7000', 'oca', 'tape', 'sticker', 'banda', 'consumabil', 'loca'], 'Adezivi & Consumabile'),
 )
+# Prioritate Folii înainte de Unelte (UV film / film protector → Folii Protecție)
+ACCESORII_FOLII_KEYWORDS = ('protector', 'folie', 'tempered', 'glass protector', 'screen protector', 'uv film', 'film protector', 'matt privacy', 'privacy film')
 
 class ImportProduse:
     def __init__(self, root):
@@ -947,7 +966,7 @@ class ImportProduse:
         return tip
 
     def _detect_brand_for_category(self, name_lower):
-        """Inferă brandul pentru ramura Piese (Piese > Piese {Brand} > ...)."""
+        """Inferă brandul pentru ramura Piese (Piese > Piese {Brand} > ...). Prioritate: iPhone/Apple, Samsung/Galaxy, Huawei/Honor, Xiaomi/Redmi/Poco, OnePlus."""
         if 'iphone' in name_lower or 'apple' in name_lower:
             return 'iPhone'
         if 'samsung' in name_lower or 'galaxy' in name_lower:
@@ -956,10 +975,10 @@ class ImportProduse:
             return 'Huawei'
         if 'xiaomi' in name_lower or 'redmi' in name_lower or 'poco' in name_lower:
             return 'Xiaomi'
-        if 'google' in name_lower or 'pixel' in name_lower:
-            return 'Google'
         if 'oneplus' in name_lower:
             return 'OnePlus'
+        if 'google' in name_lower or 'pixel' in name_lower:
+            return 'Google'
         if 'motorola' in name_lower or 'moto ' in name_lower:
             return 'Motorola'
         if 'ipad' in name_lower:
@@ -987,18 +1006,21 @@ class ImportProduse:
                 return sub_name
         return 'Adezivi & Consumabile'  # default
 
-    def get_woo_category(self, product_name, product_type='', manual_code=None):
+    def get_woo_category(self, product_name, product_type='', manual_code=None, description='', url_slug='', tags=''):
         """
-        Returnează categoria WooCommerce în format ierarhic:
-        - PIESE (3 nivele): Piese > Piese iPhone > Ecrane
-        - UNELTE (2 nivele): Unelte > Șurubelnițe
-        - ACCESORII (2 nivele): Accesorii > Adezivi & Consumabile
-
-        Dacă manual_code este setat (sku_list: link | COD), se folosește maparea COD; altfel se detectează din nume.
+        Returnează categoria WooCommerce. Prioritate detectare: Titlu > URL slug > Descriere > Taguri.
+        - PIESE (3 nivele): Piese > Piese {BRAND} > Tip (brand din titlu/descriere)
+        - UNELTE (2 nivele): Unelte > Subcategorie
+        - ACCESORII (2 nivele): Accesorii > Subcategorie
+        - Nimic detectat: Uncategorized + log pentru review.
         """
         name_lower = (product_name or '').lower()
         type_lower = (product_type or '').lower()
-        combined = name_lower + ' ' + type_lower
+        slug_lower = (url_slug or '').replace('-', ' ').lower()
+        desc_snippet = (description or '')[:500].lower()
+        tags_lower = (tags or '').lower()
+        # Prioritate: titlu > slug > descriere > taguri (toate în combined pentru matching)
+        combined = ' '.join(filter(None, [name_lower, type_lower, slug_lower, desc_snippet, tags_lower]))
 
         # —— Prioritate: cod manual din sku_list (link | COD) ——
         if manual_code and isinstance(manual_code, str):
@@ -1008,39 +1030,49 @@ class ImportProduse:
                 top = m.get('top') or m.get('cat')
                 if top == 'Piese':
                     cat_name = m.get('cat', '')
-                    brand = self._detect_brand_for_category(name_lower) or 'Generic'
+                    brand = self._detect_brand_for_category(name_lower) or self._detect_brand_for_category(combined) or 'iPhone'
                     return f"Piese > Piese {brand} > {cat_name}"
-                if manual_code == 'TOOL':
-                    sub = self._detect_unelte_sub(combined)
-                    return f"Unelte > {sub}"
-                if manual_code == 'EQP':
-                    sub = 'Microscoape' if 'microscop' in combined else 'Separatoare Ecrane'
-                    return f"Unelte > {sub}"
-                if manual_code == 'CNS' or m.get('sub'):
-                    return f"Accesorii > {m.get('sub', 'Adezivi & Consumabile')}"
-                # fallback vechi
                 if m.get('cat') == 'Unelte':
-                    return f"Unelte > {self._detect_unelte_sub(combined)}"
-                return f"Accesorii > {m.get('sub', 'Adezivi & Consumabile')}"
+                    sub = m.get('sub') or self._detect_unelte_sub(combined)
+                    return f"Unelte > {sub}"
+                if m.get('cat') == 'Accesorii':
+                    return f"Accesorii > {m.get('sub', 'Adezivi & Consumabile')}"
+                if m.get('sub'):
+                    return f"Accesorii > {m.get('sub')}"
+                return f"Unelte > {self._detect_unelte_sub(combined)}"
 
-        # —— Auto: detectare brand + tip pentru PIESE (3 nivele) ——
-        brand = self._detect_brand_for_category(name_lower)
+        # —— Auto: PIESE (3 nivele) – detectare BRAND + TIP ——
+        brand = self._detect_brand_for_category(name_lower) or self._detect_brand_for_category(combined)
         if brand:
             tip = self._detect_piese_tip(combined)
             return f"Piese > Piese {brand} > {tip}"
+
+        # —— Auto: ACCESORII Folii ÎNAINTE de Unelte ——
+        if any(kw in combined for kw in ACCESORII_FOLII_KEYWORDS):
+            return "Accesorii > Folii Protecție"
 
         # —— Auto: UNELTE (2 nivele) ——
         for keywords, _ in UNELTE_SUBCAT_KEYWORDS:
             if any(kw in combined for kw in keywords):
                 sub = self._detect_unelte_sub(combined)
                 return f"Unelte > {sub}"
-        if any(x in combined for x in ['tool', 'unealtă', 'unealta', 'statie', 'station', 'preheater', 'separator', 'microscop', 'tester', 'diagnostic']):
+        if any(x in combined for x in ['tool', 'unealtă', 'unealta', 'statie', 'station', 'preheater', 'separator', 'microscop', 'tester', 'diagnostic', 'programmer', 'programator', 'kit', 'repair kit']):
             sub = self._detect_unelte_sub(combined)
             return f"Unelte > {sub}"
 
-        # —— Auto: ACCESORII (2 nivele) ——
+        # —— Auto: ACCESORII (2 nivele) – doar dacă avem keyword accesorii ——
         sub = self._detect_accesorii_sub(combined)
-        return f"Accesorii > {sub}"
+        if sub != 'Adezivi & Consumabile':
+            return f"Accesorii > {sub}"
+        if any(kw in combined for kw in ['case', 'husa', 'cable', 'charger', 'adeziv', 'tape', 'b7000', 'folie', 'protector', 'cover', 'bumper']):
+            return f"Accesorii > {sub}"
+
+        # —— Nimic detectat: Uncategorized + log ——
+        try:
+            self.log(f"   ⚠ Categorie necunoscută pentru: {product_name[:50]}... → Uncategorized (review manual)", "WARNING")
+        except Exception:
+            pass
+        return "Uncategorized"
 
     def extract_phone_model(self, product_name):
         """
@@ -1112,9 +1144,11 @@ class ImportProduse:
     def _detect_tip_produs_ro(self, product_name):
         """
         Detectează tipul produsului în română din titlul EN.
-        Mapări WebGSM: Charging Port -> Conector Încărcare, Battery -> Baterie, Back Camera -> Cameră Spate.
+        Mapări WebGSM: Charging Port -> Conector Încărcare, Battery -> Baterie, Folie/UV film -> Folie protecție.
         """
         text = product_name.lower()
+        if any(x in text for x in ['folie', 'screen protector', 'protector ecran', 'uv film', 'film protector', 'tempered glass', 'matt privacy', 'privacy film']):
+            return 'Folie protecție'
         if 'charging port' in text:
             return 'Conector Încărcare'
         if any(x in text for x in ['battery', 'baterie', 'acumulator']):
@@ -1726,7 +1760,7 @@ DESC_RO: <full description in Romanian; KEEP structure (Greutate netă, Compatib
 SEO_TITLE: <one line, max 60 chars>
 SEO_DESC: <one line, max 155 chars>
 FOCUS_KW: <one short phrase for SEO>
-TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură, Tester>
+TIP_PRODUS: <exactly one: Baterie, Ecran, Conector Încărcare, Cameră Spate, Șurub, Șurubelniță, Componentă, Flex, Carcasă, Difuzor, Buton, Garnitură, Tester, Folie protecție>
 TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g. wholesale screwdrivers -> șurubelnițe en-gros); otherwise suggest max 6 short tags; comma-separated, max 8 tags, grammatically correct Romanian>"""
         timeout_sec = self.config.get('OLLAMA_TIMEOUT', 300)
         for attempt in range(2):
@@ -2145,8 +2179,17 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     # SKU furnizor: codul MobileSentrix (ex: 107182127516)
                     sku_furnizor = product.get('sku_furnizor', product.get('sku', ''))
 
+                    # Categorii: Titlu > URL slug > Descriere > Taguri; folosit și pentru garanție
+                    manual_code = product.get('manual_category_code')
+                    url_slug = (product.get('source_url') or '').rstrip('/').split('/')[-1] or ''
+                    categories = self.get_woo_category(
+                        clean_name, tip_ro, manual_code=manual_code,
+                        description=product.get('description', '')[:500],
+                        url_slug=url_slug,
+                        tags=product.get('tags', '')
+                    )
                     # Detectează garanția (număr luni)
-                    warranty_text = self.detect_warranty(clean_name_ro, self.get_woo_category(clean_name, tip_ro))
+                    warranty_text = self.detect_warranty(clean_name_ro, categories)
                     # Convertește "12 luni" -> 12, "6 luni" -> 6, etc.
                     warranty_months = re.search(r'(\d+)', warranty_text)
                     warranty_months = warranty_months.group(1) if warranty_months else '12'
@@ -2174,9 +2217,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
 
-                    # Categorii: manual_code din sku_list (link | COD) are prioritate; altfel get_woo_category automat
-                    manual_code = product.get('manual_category_code')
-                    categories = self.get_woo_category(clean_name, tip_ro, manual_code=manual_code)
+                    # Categorii deja calculate mai sus (cu description, url_slug, tags)
 
                     # SEO Rank Math: din Ollama dacă avem, altfel funcții interne
                     if ollama_data:
