@@ -102,7 +102,9 @@ BADGE_CUSTOM_BRANDS_FILE = 'data/badge_custom_brands.txt'
 BADGE_CUSTOM_MODELS_FILE = 'data/badge_custom_models.txt'
 BADGE_CUSTOM_TECH_FILE = 'data/badge_custom_tech.txt'
 BADGE_LAST_CONFIRMED_FILE = 'data/badge_last_confirmed.json'
+BADGE_PRESETS_BY_BRAND_FILE = 'data/badge_presets_by_brand.json'
 BADGE_DEFAULT_BRANDS = ['', 'JK', 'GX', 'ZY', 'RJ', 'HEX', 'Foxconn', 'Service Pack', 'Apple Original', 'Samsung Original']
+BADGE_HZ_OPTIONS = ['', '60Hz', '90Hz', '120Hz', '144Hz', '240Hz']
 # Paletă culori rapide (hex)
 BADGE_PALETTE = [
     '#4CAF50', '#2196F3', '#FF9800', '#F44336', '#9C27B0', '#607D8B', '#FFD700', '#795548',
@@ -299,10 +301,11 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
     badges = []
     if badge_data.get('tehnologie'):
         badges.append(('tech', str(badge_data['tehnologie'])))
-    if badge_data.get('hz_120'):
-        badges.append(('hz', '120Hz'))
+    hz_text = (badge_data.get('hz_text') or '').strip() or (badge_data.get('hz_120') and '120Hz' or '')
+    if hz_text:
+        badges.append(('hz', hz_text))
     if badge_data.get('ic_transferabil'):
-        badges.append(('ic', 'IC ✓'))
+        badges.append(('ic', 'IC Transferabil'))
     if badge_data.get('truetone'):
         badges.append(('tt', 'TT ✓'))
 
@@ -430,21 +433,50 @@ def save_badge_last_confirmed(script_dir, data_dict, style_dict, apply_badges=Tr
         pass
 
 
-class BadgePreviewWindow:
-    """Fereastră badge-uri: meniu pe tab-uri, paletă culori, persistență, Reset la ultima confirmată."""
+def load_badge_presets_by_brand(script_dir):
+    """Încarcă preseturi per brand (data + style) din data/badge_presets_by_brand.json."""
+    path = _badge_data_dir(script_dir) / Path(BADGE_PRESETS_BY_BRAND_FILE).name
+    if not path.exists():
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
-    def __init__(self, parent, image_path, detected_data, callback, script_dir=None):
+
+def save_badge_preset_for_brand(script_dir, brand_key, data_dict, style_dict, apply_badges=True):
+    """Salvează preset complet pentru un brand (folosit la încărcare și la Reset per brand)."""
+    path = _badge_data_dir(script_dir) / Path(BADGE_PRESETS_BY_BRAND_FILE).name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    presets = load_badge_presets_by_brand(script_dir)
+    key = (brand_key or '').strip() or '_fara_brand'
+    presets[key] = {'data': data_dict, 'style': style_dict or {}, 'apply_badges': apply_badges}
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(presets, f, indent=2)
+    except Exception:
+        pass
+
+
+class BadgePreviewWindow:
+    """Fereastră badge-uri: Skip poză / următoarea, 120Hz editabil, IC Transferabil, preset per brand, Reset la preset brand."""
+
+    def __init__(self, parent, image_path, detected_data, callback, script_dir=None, image_index=0, total_images=1):
         self.window = tk.Toplevel(parent)
         self.window.title("Preview Badge-uri - WebGSM")
-        self.window.geometry("1100x820")
-        self.window.minsize(900, 650)
+        self.window.geometry("1120x840")
+        self.window.minsize(920, 660)
         self.window.transient(parent)
         self.window.grab_set()
         self.image_path = image_path
         self.callback = callback
         self.script_dir = script_dir or Path(__file__).resolve().parent
         self.badge_data = dict(detected_data) if detected_data else {}
+        self.image_index = image_index
+        self.total_images = total_images
         self._last_confirmed = load_badge_last_confirmed(self.script_dir)
+        self._presets_by_brand = load_badge_presets_by_brand(self.script_dir)
         self.setup_ui()
         self.window.protocol("WM_DELETE_WINDOW", self.on_skip)
         self.window.lift()
@@ -501,13 +533,13 @@ class BadgePreviewWindow:
     def setup_ui(self):
         main_frame = ttk.Frame(self.window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
-        left_frame = ttk.LabelFrame(main_frame, text="Preview", padding=10)
+        left_frame = ttk.LabelFrame(main_frame, text="Preview imagine", padding=10)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.preview_label = tk.Label(left_frame, bg='#404040', fg='white', text='Se încarcă...', font=('', 11))
+        self.preview_label = tk.Label(left_frame, bg='#2d2d2d', fg='#e0e0e0', text='Se încarcă...', font=('', 11))
         self.preview_label.pack(fill=tk.BOTH, expand=True)
 
         right_frame = ttk.Frame(main_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(10, 0))
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(12, 0))
         notebook = ttk.Notebook(right_frame)
         notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -516,8 +548,10 @@ class BadgePreviewWindow:
         notebook.add(tab_content, text="Conținut")
         rf = self._make_scroll_frame(tab_content)
 
+        title_text = f"Imagine {self.image_index + 1} din {self.total_images}"
+        ttk.Label(rf, text=title_text, font=('', 11, 'bold')).pack(anchor=tk.W, pady=(0, 4))
         self.apply_badges_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(rf, text="Aplică badge-uri pe imagine (debifează pentru a nu pune badge-uri)", variable=self.apply_badges_var, command=self.update_preview).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Checkbutton(rf, text="Aplică badge-uri pe această imagine", variable=self.apply_badges_var, command=self.update_preview).pack(anchor=tk.W, pady=(0, 8))
         ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(rf, text="Brand piesa (sau introduce manual):").pack(anchor=tk.W)
@@ -553,10 +587,16 @@ class BadgePreviewWindow:
         ttk.Button(rf, text="Salvează tehnologie în listă", command=self._save_current_tech).pack(anchor=tk.W, pady=(0, 12))
 
         ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
-        self.hz_var = tk.BooleanVar(value=bool(self.badge_data.get('hz_120')))
-        ttk.Checkbutton(rf, text="120Hz", variable=self.hz_var, command=self.update_preview).pack(anchor=tk.W)
+        ttk.Label(rf, text="Frecvență (Hz) – text pe badge:").pack(anchor=tk.W)
+        self.hz_text_var = tk.StringVar(value=self.badge_data.get('hz_text') or ('120Hz' if self.badge_data.get('hz_120') else ''))
+        hz_combo = ttk.Combobox(rf, textvariable=self.hz_text_var, width=14)
+        hz_combo['values'] = BADGE_HZ_OPTIONS
+        hz_combo.pack(fill=tk.X, pady=(0, 4))
+        hz_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        hz_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+        ttk.Label(rf, text="(ex: 60Hz, 90Hz, 120Hz sau gol)").pack(anchor=tk.W)
         self.ic_var = tk.BooleanVar(value=bool(self.badge_data.get('ic_transferabil')))
-        ttk.Checkbutton(rf, text="IC Transferabil", variable=self.ic_var, command=self.update_preview).pack(anchor=tk.W)
+        ttk.Checkbutton(rf, text="IC Transferabil (text pe badge)", variable=self.ic_var, command=self.update_preview).pack(anchor=tk.W, pady=(6, 0))
         self.tt_var = tk.BooleanVar(value=bool(self.badge_data.get('truetone')))
         ttk.Checkbutton(rf, text="TrueTone", variable=self.tt_var, command=self.update_preview).pack(anchor=tk.W)
 
@@ -633,9 +673,11 @@ class BadgePreviewWindow:
         # Butoane acțiuni (sub notebook)
         btn_frame = ttk.Frame(right_frame)
         btn_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(btn_frame, text="Reset la ultima confirmată", command=self._reset_to_last_confirmed).pack(side=tk.LEFT, padx=(0, 8))
+        if self.total_images > 1:
+            ttk.Button(btn_frame, text="⏭ Skip → următoarea poză", command=self.on_skip_image).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(btn_frame, text="↩ Reset (setare brand)", command=self._reset_to_brand_preset).pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(btn_frame, text="✓ Confirmă", command=self.on_confirm).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="⟳ Batch", command=self.on_batch).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="⊘ Fără Badge", command=self.on_skip).pack(side=tk.LEFT, padx=4)
 
     def _delayed_preview(self):
@@ -644,38 +686,83 @@ class BadgePreviewWindow:
         self._apply_last_confirmed_if_first()
         self.update_preview()
 
+    def _get_preset_for_current_brand(self):
+        """Returnează presetul salvat pentru brandul curent (din combobox)."""
+        brand = (self.brand_var.get() or '').strip() or '_fara_brand'
+        return self._presets_by_brand.get(brand)
+
     def _apply_last_confirmed_if_first(self):
-        """La prima afișare, aplică doar STILUL din ultima confirmare (culori, font, poziții). Conținutul rămâne din produsul curent."""
-        if getattr(self, '_style_applied', False) or not self._last_confirmed:
+        """La prima afișare: aplică presetul pentru brandul curent dacă există; altfel ultima confirmare globală."""
+        if getattr(self, '_style_applied', False):
             return
         self._style_applied = True
+        preset = self._get_preset_for_current_brand()
+        if preset:
+            data = preset.get('data') or {}
+            style = preset.get('style') or {}
+            self.apply_badges_var.set(preset.get('apply_badges', True))
+            self.brand_var.set(data.get('brand', '') or '')
+            self.model_var.set(data.get('model', '') or '')
+            self.tech_var.set(data.get('tehnologie', '') or '')
+            self.hz_text_var.set(data.get('hz_text') or '')
+            self.ic_var.set(data.get('ic_transferabil', False))
+            self.tt_var.set(data.get('truetone', False))
+            self._apply_style_dict(style)
+            self.update_preview()
+            return
+        if not self._last_confirmed:
+            return
         style = self._last_confirmed.get('style') or {}
         self.apply_badges_var.set(self._last_confirmed.get('apply_badges', True))
+        self._apply_style_dict(style)
+
+    def _apply_style_dict(self, style):
+        """Aplică un dict style la toate variabilele de aspect."""
+        if not style:
+            return
         self.brand_bg_var.set(style.get('brand_bg') or '')
         self.brand_pos_var.set(style.get('brand_pos', 'top_left'))
         self.brand_shape_var.set(style.get('brand_shape', 'rounded'))
         self.brand_font_var.set(str(style.get('brand_font_size', 42)))
         self.brand_padding_var.set(str(style.get('brand_padding', 14)))
+        self.brand_offset_x_var.set(str(style.get('brand_offset_x', 0)))
+        self.brand_offset_y_var.set(str(style.get('brand_offset_y', 0)))
         self.model_bg_var.set(style.get('model_bg') or '')
         self.model_pos_var.set(style.get('model_pos', 'center'))
         self.model_font_var.set(str(style.get('model_font_size', 34)))
         self.model_padding_var.set(str(style.get('model_padding', 18)))
+        self.model_offset_x_var.set(str(style.get('model_offset_x', 0)))
+        self.model_offset_y_var.set(str(style.get('model_offset_y', 0)))
         self.badges_bg_var.set(style.get('badges_bg') or '')
         self.badges_pos_var.set(style.get('badges_pos', 'bottom_center'))
         self.badges_font_var.set(str(style.get('badges_font_size', 24)))
         self.badges_padding_var.set(str(style.get('badges_padding', 14)))
         self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
-        self.brand_offset_x_var.set(str(style.get('brand_offset_x', 0)))
-        self.brand_offset_y_var.set(str(style.get('brand_offset_y', 0)))
-        self.model_offset_x_var.set(str(style.get('model_offset_x', 0)))
-        self.model_offset_y_var.set(str(style.get('model_offset_y', 0)))
         self.badges_offset_x_var.set(str(style.get('badges_offset_x', 0)))
         self.badges_offset_y_var.set(str(style.get('badges_offset_y', 0)))
         self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
         self.margin_var.set(str(style.get('margin', 20)))
 
+    def _reset_to_brand_preset(self):
+        """Resetează la ultima setare salvată pentru brandul curent (preset per brand)."""
+        preset = self._get_preset_for_current_brand()
+        if not preset:
+            messagebox.showinfo("Reset", "Nu există setare salvată pentru acest brand. Confirmă sau Batch pentru a salva presetul la acest brand.")
+            return
+        data = preset.get('data') or {}
+        style = preset.get('style') or {}
+        self.apply_badges_var.set(preset.get('apply_badges', True))
+        self.brand_var.set(data.get('brand', '') or '')
+        self.model_var.set(data.get('model', '') or '')
+        self.tech_var.set(data.get('tehnologie', '') or '')
+        self.hz_text_var.set(data.get('hz_text') or '')
+        self.ic_var.set(data.get('ic_transferabil', False))
+        self.tt_var.set(data.get('truetone', False))
+        self._apply_style_dict(style)
+        self.update_preview()
+
     def _reset_to_last_confirmed(self):
-        """Resetează toate câmpurile (conținut + aspect) la ultima confirmare salvată."""
+        """Resetează la ultima confirmare globală (folosește Reset (brand) pentru preset per brand)."""
         if not self._last_confirmed:
             messagebox.showinfo("Reset", "Nu există o confirmare salvată. Confirmă o dată pentru a putea folosi Reset.")
             return
@@ -685,31 +772,10 @@ class BadgePreviewWindow:
         self.brand_var.set(data.get('brand', '') or '')
         self.model_var.set(data.get('model', '') or '')
         self.tech_var.set(data.get('tehnologie', '') or '')
-        self.hz_var.set(data.get('hz_120', False))
+        self.hz_text_var.set(data.get('hz_text') or '')
         self.ic_var.set(data.get('ic_transferabil', False))
         self.tt_var.set(data.get('truetone', False))
-        self.brand_bg_var.set(style.get('brand_bg') or '')
-        self.brand_pos_var.set(style.get('brand_pos', 'top_left'))
-        self.brand_shape_var.set(style.get('brand_shape', 'rounded'))
-        self.brand_font_var.set(str(style.get('brand_font_size', 42)))
-        self.brand_padding_var.set(str(style.get('brand_padding', 14)))
-        self.model_bg_var.set(style.get('model_bg') or '')
-        self.model_pos_var.set(style.get('model_pos', 'center'))
-        self.model_font_var.set(str(style.get('model_font_size', 34)))
-        self.model_padding_var.set(str(style.get('model_padding', 18)))
-        self.badges_bg_var.set(style.get('badges_bg') or '')
-        self.badges_pos_var.set(style.get('badges_pos', 'bottom_center'))
-        self.badges_font_var.set(str(style.get('badges_font_size', 24)))
-        self.badges_padding_var.set(str(style.get('badges_padding', 14)))
-        self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
-        self.brand_offset_x_var.set(str(style.get('brand_offset_x', 0)))
-        self.brand_offset_y_var.set(str(style.get('brand_offset_y', 0)))
-        self.model_offset_x_var.set(str(style.get('model_offset_x', 0)))
-        self.model_offset_y_var.set(str(style.get('model_offset_y', 0)))
-        self.badges_offset_x_var.set(str(style.get('badges_offset_x', 0)))
-        self.badges_offset_y_var.set(str(style.get('badges_offset_y', 0)))
-        self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
-        self.margin_var.set(str(style.get('margin', 20)))
+        self._apply_style_dict(style)
         self.update_preview()
 
     def _save_current_brand(self):
@@ -768,11 +834,13 @@ class BadgePreviewWindow:
         }
 
     def get_current_badge_data(self):
+        hz_t = (self.hz_text_var.get() or '').strip()
         data = {
             'brand': (self.brand_var.get() or '').strip() or None,
             'model': (self.model_var.get() or '').strip() or None,
             'tehnologie': (self.tech_var.get() or '').strip() or None,
-            'hz_120': self.hz_var.get(),
+            'hz_120': bool(hz_t),
+            'hz_text': hz_t or None,
             'ic_transferabil': self.ic_var.get(),
             'truetone': self.tt_var.get(),
         }
@@ -809,6 +877,10 @@ class BadgePreviewWindow:
         d.pop('_style', None)
         style = self.get_current_style()
         save_badge_last_confirmed(self.script_dir, d, style, apply_badges=apply_badges)
+        brand_key = (d.get('brand') or '').strip()
+        if brand_key:
+            save_badge_preset_for_brand(self.script_dir, brand_key, d, style, apply_badges=apply_badges)
+            self._presets_by_brand = load_badge_presets_by_brand(self.script_dir)
         self.callback('confirm', {'data': d, 'style': style, 'apply_badges': apply_badges})
         self.window.destroy()
 
@@ -817,7 +889,15 @@ class BadgePreviewWindow:
         d = self.get_current_badge_data()
         d.pop('_style', None)
         style = self.get_current_style()
+        brand_key = (d.get('brand') or '').strip()
+        if brand_key:
+            save_badge_preset_for_brand(self.script_dir, brand_key, d, style, apply_badges=apply_badges)
+            self._presets_by_brand = load_badge_presets_by_brand(self.script_dir)
         self.callback('batch', {'data': d, 'style': style, 'apply_badges': apply_badges})
+        self.window.destroy()
+
+    def on_skip_image(self):
+        self.callback('skip_image', None)
         self.window.destroy()
 
     def on_skip(self):
@@ -2081,82 +2161,101 @@ class ImportProduse:
             return batch.get('data'), batch.get('style')
         return None
 
-    def _run_badge_preview(self, image_path, product_data):
-        """Rulează pe main thread: deschide fereastra de preview badge-uri."""
+    def _run_badge_preview(self, images_list, image_index, product_data):
+        """Rulează pe main thread: deschide fereastra de preview badge-uri pentru imaginea image_index."""
         name = (product_data.get('name') or '').lower()
         detected_data = {
             'brand': product_data.get('pa_brand_piesa') or None,
             'model': product_data.get('pa_model') or None,
             'tehnologie': product_data.get('pa_tehnologie') or None,
             'hz_120': '120hz' in name or '120 hz' in name,
+            'hz_text': '120Hz' if ('120hz' in name or '120 hz' in name) else '',
             'ic_transferabil': product_data.get('ic_movable') == 'true',
             'truetone': product_data.get('truetone_support') == 'true',
         }
 
         def on_done(action, data):
-            self._badge_result = {'action': action, 'data': data}
+            self._badge_result = {'action': action, 'data': data, 'image_index': image_index}
             if getattr(self, '_badge_event', None):
                 self._badge_event.set()
 
-        BadgePreviewWindow(self.root, image_path, detected_data, on_done)
+        img_item = images_list[image_index]
+        image_path = img_item.get('local_path', img_item) if isinstance(img_item, dict) else img_item
+        total = len(images_list)
+        BadgePreviewWindow(self.root, image_path, detected_data, on_done, self._script_dir, image_index=image_index, total_images=total)
 
     def process_images_with_badges(self, images_list, product_data):
         """
-        Procesează imaginile cu badge-uri (doar prima imagine).
-        Afișează preview pe main thread; păstrează originalul, salvează _badge.webp dacă user confirmă.
+        Procesează imaginile: permite Skip pe poză (trece la următoarea imagine) sau Fără Badge (renunță la tot produsul).
+        Badge se aplică pe prima imagine pe care userul o confirmă (sau prima dacă batch).
         """
         if not images_list or not self.badge_preview_var.get():
-            return images_list
-        first = images_list[0]
-        first_path = first.get('local_path', first) if isinstance(first, dict) else first
-        if not first_path or not Path(first_path).exists():
             return images_list
 
         batch_result = self.check_batch_badge_settings(product_data)
         if batch_result is not None:
             batch_data, batch_style = batch_result
-            out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-            generate_badge_preview(first_path, batch_data, out_path, style=batch_style)
-            if isinstance(first, dict):
-                images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
-            else:
-                images_list[0] = out_path
+            first = images_list[0]
+            first_path = first.get('local_path', first) if isinstance(first, dict) else first
+            if first_path and Path(first_path).exists():
+                out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
+                generate_badge_preview(first_path, batch_data, out_path, style=batch_style)
+                if isinstance(first, dict):
+                    images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
+                else:
+                    images_list[0] = out_path
             self.log(f"   🏷️ Badge aplicat (batch) pe prima imagine", "INFO")
             return images_list
 
-        self._badge_event = threading.Event()
-        self._badge_result = None
-        self.root.after(0, lambda: self._run_badge_preview(first_path, product_data))
-        self._badge_event.wait()
-        res = self._badge_result
-        if not res:
-            return images_list
-        action, payload = res.get('action'), res.get('data')
-        if action == 'skip':
-            return images_list
-        apply_badges = payload.get('apply_badges', True) if isinstance(payload, dict) else True
-        badge_data = payload.get('data') if isinstance(payload, dict) else payload
-        style = payload.get('style') if isinstance(payload, dict) else None
-        if not apply_badges:
-            self.log(f"   🏷️ Fără badge (opțiune debifată) – imagine neschimbată", "INFO")
-            return images_list
-        if action == 'confirm' and badge_data:
-            out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-            generate_badge_preview(first_path, badge_data, out_path, style=style)
-            if isinstance(first, dict):
-                images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
-            else:
-                images_list[0] = out_path
-            self.log(f"   🏷️ Badge confirmat pe prima imagine", "INFO")
-        elif action == 'batch' and badge_data and apply_badges:
-            self.batch_badge_settings = {'model': badge_data.get('model'), 'data': badge_data, 'style': style}
-            out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-            generate_badge_preview(first_path, badge_data, out_path, style=style)
-            if isinstance(first, dict):
-                images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
-            else:
-                images_list[0] = out_path
-            self.log(f"   🏷️ Badge aplicat (batch pentru model similare)", "INFO")
+        idx = 0
+        while idx < len(images_list):
+            img_item = images_list[idx]
+            img_path = img_item.get('local_path', img_item) if isinstance(img_item, dict) else img_item
+            if not img_path or not Path(img_path).exists():
+                idx += 1
+                continue
+            self._badge_event = threading.Event()
+            self._badge_result = None
+            self.root.after(0, lambda i=idx: self._run_badge_preview(images_list, i, product_data))
+            self._badge_event.wait()
+            res = self._badge_result
+            if not res:
+                return images_list
+            action = res.get('action')
+            if action == 'skip':
+                return images_list
+            if action == 'skip_image':
+                idx += 1
+                continue
+            payload = res.get('data')
+            apply_badges = payload.get('apply_badges', True) if isinstance(payload, dict) else True
+            badge_data = payload.get('data') if isinstance(payload, dict) else payload
+            style = payload.get('style') if isinstance(payload, dict) else None
+            if not apply_badges:
+                self.log(f"   🏷️ Fără badge (opțiune debifată) – imagine neschimbată", "INFO")
+                return images_list
+            first_path = img_path
+            first = img_item
+            if action == 'confirm' and badge_data:
+                out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
+                generate_badge_preview(first_path, badge_data, out_path, style=style)
+                if isinstance(first, dict):
+                    images_list[idx] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
+                else:
+                    images_list[idx] = out_path
+                self.log(f"   🏷️ Badge confirmat pe imaginea {idx + 1}", "INFO")
+                return images_list
+            if action == 'batch' and badge_data and apply_badges:
+                self.batch_badge_settings = {'model': badge_data.get('model'), 'data': badge_data, 'style': style}
+                out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
+                generate_badge_preview(first_path, badge_data, out_path, style=style)
+                if isinstance(first, dict):
+                    images_list[idx] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
+                else:
+                    images_list[idx] = out_path
+                self.log(f"   🏷️ Badge aplicat (batch) pe imaginea {idx + 1}", "INFO")
+                return images_list
+            idx += 1
         return images_list
 
     def run_import(self):
