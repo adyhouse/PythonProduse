@@ -14,7 +14,7 @@ except:
     pass
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, filedialog
+from tkinter import ttk, scrolledtext, messagebox, filedialog, colorchooser
 import json
 import threading
 from datetime import datetime
@@ -97,9 +97,17 @@ ACCESORII_SUBCAT_KEYWORDS = (
 # Prioritate Folii înainte de Unelte (UV film / film protector → Folii Protecție)
 ACCESORII_FOLII_KEYWORDS = ('protector', 'folie', 'tempered', 'glass protector', 'screen protector', 'uv film', 'film protector', 'matt privacy', 'privacy film')
 
-# Fișier pentru branduri custom (un brand per linie) – folosit în preview badge
+# Fișiere badge: branduri/model/tehnologie custom + ultima confirmare (stil + date)
 BADGE_CUSTOM_BRANDS_FILE = 'data/badge_custom_brands.txt'
+BADGE_CUSTOM_MODELS_FILE = 'data/badge_custom_models.txt'
+BADGE_CUSTOM_TECH_FILE = 'data/badge_custom_tech.txt'
+BADGE_LAST_CONFIRMED_FILE = 'data/badge_last_confirmed.json'
 BADGE_DEFAULT_BRANDS = ['', 'JK', 'GX', 'ZY', 'RJ', 'HEX', 'Foxconn', 'Service Pack', 'Apple Original', 'Samsung Original']
+# Paletă culori rapide (hex)
+BADGE_PALETTE = [
+    '#4CAF50', '#2196F3', '#FF9800', '#F44336', '#9C27B0', '#607D8B', '#FFD700', '#795548',
+    '#00BCD4', '#8BC34A', '#E91E63', '#3F51B5', '#009688', '#CDDC39', '#673AB7', '#000000',
+]
 
 
 def _get_badge_fonts():
@@ -137,6 +145,16 @@ def _draw_text_bbox(draw, xy, text, font):
     except AttributeError:
         w, h = draw.textsize(text, font=font)
         return w, h
+
+
+def _draw_text_centered(draw, rect, text, font, fill='white'):
+    """Desenează text centrat orizontal și vertical în rect [x0,y0,x1,y1]. Aliniere corectă în pill/rounded."""
+    tw, th = _draw_text_bbox(draw, (0, 0), text, font)
+    x0, y0, x1, y1 = rect
+    w, h = x1 - x0, y1 - y0
+    tx = x0 + (w - tw) // 2
+    ty = y0 + (h - th) // 2
+    draw.text((tx, ty), text, font=font, fill=fill)
 
 
 def _parse_hex_color(hex_str, default='#666666'):
@@ -181,9 +199,9 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
             pass
         return ImageFont.load_default()
 
-    font_brand = font_with_size('brand_font_size', 32)
-    font_model = font_with_size('model_font_size', 28)
-    font_badge = font_with_size('badges_font_size', 18)
+    font_brand = font_with_size('brand_font_size', 42)
+    font_model = font_with_size('model_font_size', 34)
+    font_badge = font_with_size('badges_font_size', 24)
 
     brand_colors = {
         'JK': '#4CAF50', 'GX': '#2196F3', 'ZY': '#FF9800', 'RJ': '#F44336',
@@ -193,13 +211,13 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
 
     brand_pos = (style.get('brand_pos') or 'top_left').strip().lower()
     brand_shape = (style.get('brand_shape') or 'rounded').strip().lower()
-    margin = 20
+    margin = int(style.get('margin', 20))
     if badge_data.get('brand'):
         brand = str(badge_data['brand']).strip()
         brand_color = _parse_hex_color(style.get('brand_bg') or brand_colors.get(brand, '#666666'))
         brand_text = brand.upper()
         tw, th = _draw_text_bbox(draw, (0, 0), brand_text, font_brand)
-        padding = 12
+        padding = int(style.get('brand_padding', 14))
         w_rect = tw + padding * 2
         h_rect = th + padding * 2
         if 'right' in brand_pos:
@@ -207,29 +225,30 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
         else:
             x0, y0 = margin, margin
         rect = [x0, y0, x0 + w_rect, y0 + h_rect]
-        radius = 0 if brand_shape == 'rect' else (min(w_rect, h_rect) // 2 if brand_shape == 'pill' else 8)
+        radius = 0 if brand_shape == 'rect' else (min(w_rect, h_rect) // 2 if brand_shape == 'pill' else 10)
         if radius > 0:
             draw.rounded_rectangle(rect, radius=radius, fill=brand_color)
         else:
             draw.rectangle(rect, fill=brand_color)
-        draw.text((x0 + padding, y0 + padding - 4), brand_text, font=font_brand, fill='white')
+        _draw_text_centered(draw, rect, brand_text, font_brand, 'white')
 
     model_pos = (style.get('model_pos') or 'center').strip().lower()
     model_bg = _parse_hex_color(style.get('model_bg'), '#000000')
+    model_padding = int(style.get('model_padding', 18))
     if badge_data.get('model'):
         model = str(badge_data['model']).strip()
         tw, th = _draw_text_bbox(draw, (0, 0), model, font_model)
-        padding = 15
+        rw, rh = tw + model_padding * 2, th + model_padding * 2
         if 'center' in model_pos:
-            x = (width - tw) // 2
-            y = (height // 2) - 20
+            x0 = (width - rw) // 2
+            y0 = (height - rh) // 2 - 20
         elif 'left' in model_pos:
-            x, y = margin + padding, (height - th) // 2 - padding
+            x0, y0 = margin, (height - rh) // 2
         else:
-            x, y = width - margin - tw - padding, (height - th) // 2 - padding
-        rect = [x - padding, y - padding, x + tw + padding, y + th + padding]
-        draw.rounded_rectangle(rect, radius=10, fill=model_bg if len(model_bg) > 7 else model_bg + 'B3')
-        draw.text((x, y - 2), model, font=font_model, fill='white')
+            x0, y0 = width - margin - rw, (height - rh) // 2
+        rect = [x0, y0, x0 + rw, y0 + rh]
+        draw.rounded_rectangle(rect, radius=12, fill=model_bg if len(model_bg) > 7 else model_bg + 'B3')
+        _draw_text_centered(draw, rect, model, font_model, 'white')
 
     badges = []
     if badge_data.get('tehnologie'):
@@ -242,11 +261,13 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
         badges.append(('tt', 'TT ✓'))
 
     badges_pos = (style.get('badges_pos') or 'bottom_center').strip().lower()
-    badges_bg = style.get('badges_bg')
+    badge_extra = int(style.get('badges_padding', 14))
+    badge_height = int(style.get('badges_font_size', 24)) + badge_extra
+    badge_padding = badge_extra
+    badge_margin = int(style.get('badges_spacing', 10))
+    bottom_margin = int(style.get('bottom_margin', 24))
     badge_colors_map = {'tech': '#2196F3', 'hz': '#9C27B0', 'ic': '#4CAF50', 'tt': '#FF9800'}
     if badges:
-        badge_height = int(style.get('badges_font_size', 18)) + 14
-        badge_padding, badge_margin, bottom_margin = 10, 8, 20
         badge_widths = []
         for _, text in badges:
             tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
@@ -267,10 +288,8 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
             if len(color) == 7:
                 color = color + 'E6'
             rect = [current_x, y, current_x + w, y + badge_height]
-            draw.rounded_rectangle(rect, radius=5, fill=color)
-            tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
-            text_x = current_x + (w - tw) // 2
-            draw.text((text_x, y + 5), text, font=font_badge, fill='white')
+            draw.rounded_rectangle(rect, radius=8, fill=color)
+            _draw_text_centered(draw, rect, text, font_badge, 'white')
             current_x += w + badge_margin
 
     img = Image.alpha_composite(img, overlay)
@@ -299,90 +318,190 @@ def save_custom_brand(script_dir, brand_name):
     path = Path(script_dir) / BADGE_CUSTOM_BRANDS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = set(load_custom_brands(script_dir))
-    b = brand_name.strip()
-    if b in existing:
+    if brand_name.strip() in existing:
         return
     try:
         with open(path, 'a', encoding='utf-8') as f:
-            f.write(b + '\n')
+            f.write(brand_name.strip() + '\n')
+    except Exception:
+        pass
+
+
+def _badge_data_dir(script_dir):
+    return Path(script_dir) / 'data'
+
+
+def load_lines_file(script_dir, filename, default_lines=None):
+    """Încarcă linii dintr-un fișier din data/ (ex: modele, tehnologii)."""
+    path = _badge_data_dir(script_dir) / filename
+    if not path.exists():
+        return list(default_lines or [])
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except Exception:
+        return list(default_lines or [])
+
+
+def save_line_to_file(script_dir, filename, line):
+    """Adaugă o linie în fișier (dacă nu există)."""
+    if not (line and str(line).strip()):
+        return
+    _badge_data_dir(script_dir).mkdir(parents=True, exist_ok=True)
+    path = _badge_data_dir(script_dir) / filename
+    existing = set(load_lines_file(script_dir, filename, []))
+    s = str(line).strip()
+    if s in existing:
+        return
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(s + '\n')
+    except Exception:
+        pass
+
+
+def load_badge_last_confirmed(script_dir):
+    """Încarcă ultima confirmare badge (date + style) din data/badge_last_confirmed.json."""
+    path = _badge_data_dir(script_dir) / Path(BADGE_LAST_CONFIRMED_FILE).name
+    if not path.exists():
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def save_badge_last_confirmed(script_dir, data_dict, style_dict):
+    """Salvează ultima confirmare (pentru Reset)."""
+    path = _badge_data_dir(script_dir) / Path(BADGE_LAST_CONFIRMED_FILE).name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'data': data_dict, 'style': style_dict or {}}, f, indent=2)
     except Exception:
         pass
 
 
 class BadgePreviewWindow:
-    """Fereastră pentru preview și confirmare badge-uri – toate câmpurile editabile + aspect (culoare, poziție, formă, font)."""
+    """Fereastră badge-uri: meniu pe tab-uri, paletă culori, persistență, Reset la ultima confirmată."""
 
     def __init__(self, parent, image_path, detected_data, callback, script_dir=None):
         self.window = tk.Toplevel(parent)
         self.window.title("Preview Badge-uri - WebGSM")
-        self.window.geometry("1000x780")
-        self.window.minsize(800, 600)
+        self.window.geometry("1100x820")
+        self.window.minsize(900, 650)
         self.window.transient(parent)
         self.window.grab_set()
         self.image_path = image_path
         self.callback = callback
         self.script_dir = script_dir or Path(__file__).resolve().parent
         self.badge_data = dict(detected_data) if detected_data else {}
+        self._last_confirmed = load_badge_last_confirmed(self.script_dir)
         self.setup_ui()
         self.window.protocol("WM_DELETE_WINDOW", self.on_skip)
         self.window.lift()
         self.window.focus_force()
         self.window.after(100, self._delayed_preview)
 
-    def setup_ui(self):
-        main_frame = ttk.Frame(self.window, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        left_frame = ttk.LabelFrame(main_frame, text="Preview", padding=10)
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        left_frame.configure(width=600)
-        self.preview_label = tk.Label(left_frame, bg='#404040', fg='white', text='Se încarcă...', font=('', 11))
-        self.preview_label.pack(fill=tk.BOTH, expand=True)
-        right_frame = ttk.Frame(main_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
-        # Frame scrollabil manual (ttk.ScrollableFrame nu există în tkinter standard)
-        canvas = tk.Canvas(right_frame, width=320, highlightthickness=0, bg='#f0f0f0')
-        scrollbar = ttk.Scrollbar(right_frame)
-        scr = ttk.Frame(canvas)
-        scr_window = canvas.create_window((0, 0), window=scr, anchor=tk.NW)
+    def _make_scroll_frame(self, parent, width=380):
+        canvas = tk.Canvas(parent, width=width, highlightthickness=0, bg='#f5f5f5')
+        scrollbar = ttk.Scrollbar(parent)
+        frame = ttk.Frame(canvas)
+        scr_window = canvas.create_window((0, 0), window=frame, anchor=tk.NW)
         def _on_frame_configure(e):
             canvas.configure(scrollregion=canvas.bbox(tk.ALL))
         def _on_canvas_configure(e):
-            canvas.itemconfig(scr_window, width=e.width)
-        scr.bind('<Configure>', _on_frame_configure)
+            canvas.itemconfig(scr_window, width=max(width, e.width))
+        frame.bind('<Configure>', _on_frame_configure)
         canvas.bind('<Configure>', _on_canvas_configure)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.configure(yscrollcommand=scrollbar.set)
         scrollbar.configure(command=canvas.yview)
-        rf = scr
+        return frame
 
-        ttk.Label(rf, text="Brand Piesă (sau introduce manual):").pack(anchor=tk.W)
+    def _color_palette_frame(self, parent, var, label_text):
+        f = ttk.Frame(parent)
+        ttk.Label(f, text=label_text).pack(anchor=tk.W)
+        row = ttk.Frame(f)
+        row.pack(anchor=tk.W)
+        for i, hex_color in enumerate(BADGE_PALETTE):
+            btn = tk.Button(row, width=2, bg=hex_color, activebackground=hex_color,
+                            command=lambda c=hex_color: self._set_color_var(var, c))
+            btn.pack(side=tk.LEFT, padx=1, pady=2)
+            if (i + 1) % 8 == 0:
+                row = ttk.Frame(f)
+                row.pack(anchor=tk.W)
+        sub = ttk.Frame(f)
+        sub.pack(anchor=tk.W, pady=2)
+        ttk.Button(sub, text="Alege culoare...", width=14, command=lambda: self._pick_color(var)).pack(side=tk.LEFT, padx=(0, 6))
+        entry = ttk.Entry(sub, textvariable=var, width=10)
+        entry.pack(side=tk.LEFT)
+        var.trace_add('write', lambda *a: self.update_preview())
+        return f
+
+    def _set_color_var(self, var, hex_color):
+        var.set(hex_color)
+        self.update_preview()
+
+    def _pick_color(self, var):
+        c = colorchooser.askcolor(color=var.get() or '#666666', title='Alege culoare')
+        if c and c[1]:
+            var.set(c[1])
+            self.update_preview()
+
+    def setup_ui(self):
+        main_frame = ttk.Frame(self.window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        left_frame = ttk.LabelFrame(main_frame, text="Preview", padding=10)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.preview_label = tk.Label(left_frame, bg='#404040', fg='white', text='Se încarcă...', font=('', 11))
+        self.preview_label.pack(fill=tk.BOTH, expand=True)
+
+        right_frame = ttk.Frame(main_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(10, 0))
+        notebook = ttk.Notebook(right_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        # —— Tab Conținut ——
+        tab_content = ttk.Frame(notebook, padding=8)
+        notebook.add(tab_content, text="Conținut")
+        rf = self._make_scroll_frame(tab_content)
+
+        ttk.Label(rf, text="Brand piesa (sau introduce manual):").pack(anchor=tk.W)
         brand_values = BADGE_DEFAULT_BRANDS + load_custom_brands(self.script_dir)
         self.brand_var = tk.StringVar(value=self.badge_data.get('brand', '') or '')
-        self.brand_combo = ttk.Combobox(rf, textvariable=self.brand_var, width=22)
+        self.brand_combo = ttk.Combobox(rf, textvariable=self.brand_var, width=26)
         self.brand_combo['values'] = list(dict.fromkeys([''] + [b for b in brand_values if b]))
-        self.brand_combo.pack(fill=tk.X, pady=(0, 4))
+        self.brand_combo.pack(fill=tk.X, pady=(0, 2))
         self.brand_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
         self.brand_combo.bind('<KeyRelease>', lambda e: self.update_preview())
-        ttk.Button(rf, text="💾 Salvează brandul curent în listă", command=self._save_current_brand).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Button(rf, text="Salvează brand în listă", command=self._save_current_brand).pack(anchor=tk.W, pady=(0, 10))
 
-        ttk.Label(rf, text="Model Compatibil:").pack(anchor=tk.W)
+        ttk.Label(rf, text="Model compatibil (sau introduce manual):").pack(anchor=tk.W)
+        model_defaults = ['', 'iPhone 17 Pro Max', 'iPhone 17 Pro', 'iPhone 16 Pro Max', 'iPhone 16 Pro', 'iPhone 15 Pro Max', 'iPhone 15 Pro', 'iPhone 14 Pro Max', 'iPhone 14', 'iPhone 13', 'iPhone 12', 'Galaxy S24 Ultra', 'Galaxy S24', 'Galaxy S23 Ultra']
+        model_values = list(dict.fromkeys(model_defaults + load_lines_file(self.script_dir, Path(BADGE_CUSTOM_MODELS_FILE).name, [])))
         self.model_var = tk.StringVar(value=self.badge_data.get('model', '') or '')
-        model_combo = ttk.Combobox(rf, textvariable=self.model_var, width=22)
-        model_combo['values'] = ['', 'iPhone 17 Pro Max', 'iPhone 17 Pro', 'iPhone 17', 'iPhone 16 Pro Max', 'iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro Max', 'iPhone 15 Pro', 'iPhone 15', 'iPhone 14 Pro Max', 'iPhone 14 Pro', 'iPhone 14', 'iPhone 13', 'iPhone 12', 'iPhone 11', 'Galaxy S24 Ultra', 'Galaxy S24', 'Galaxy S23 Ultra', 'Galaxy A54']
-        model_combo.pack(fill=tk.X, pady=(0, 10))
-        model_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        model_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+        self.model_combo = ttk.Combobox(rf, textvariable=self.model_var, width=26)
+        self.model_combo['values'] = model_values
+        self.model_combo.pack(fill=tk.X, pady=(0, 2))
+        self.model_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        self.model_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+        ttk.Button(rf, text="Salvează model în listă", command=self._save_current_model).pack(anchor=tk.W, pady=(0, 10))
 
-        ttk.Label(rf, text="Tehnologie:").pack(anchor=tk.W)
+        ttk.Label(rf, text="Tehnologie (sau introduce manual):").pack(anchor=tk.W)
+        tech_defaults = ['', 'Soft OLED', 'Hard OLED', 'OLED', 'Incell', 'LCD', 'TFT', 'AMOLED']
+        tech_values = list(dict.fromkeys(tech_defaults + load_lines_file(self.script_dir, Path(BADGE_CUSTOM_TECH_FILE).name, [])))
         self.tech_var = tk.StringVar(value=self.badge_data.get('tehnologie', '') or '')
-        tech_combo = ttk.Combobox(rf, textvariable=self.tech_var, width=22)
-        tech_combo['values'] = ['', 'Soft OLED', 'Hard OLED', 'OLED', 'Incell', 'LCD', 'TFT', 'AMOLED']
-        tech_combo.pack(fill=tk.X, pady=(0, 10))
-        tech_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        tech_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+        self.tech_combo = ttk.Combobox(rf, textvariable=self.tech_var, width=26)
+        self.tech_combo['values'] = tech_values
+        self.tech_combo.pack(fill=tk.X, pady=(0, 2))
+        self.tech_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        self.tech_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+        ttk.Button(rf, text="Salvează tehnologie în listă", command=self._save_current_tech).pack(anchor=tk.W, pady=(0, 12))
 
-        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
+        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
         self.hz_var = tk.BooleanVar(value=bool(self.badge_data.get('hz_120')))
         ttk.Checkbutton(rf, text="120Hz", variable=self.hz_var, command=self.update_preview).pack(anchor=tk.W)
         self.ic_var = tk.BooleanVar(value=bool(self.badge_data.get('ic_transferabil')))
@@ -390,64 +509,129 @@ class BadgePreviewWindow:
         self.tt_var = tk.BooleanVar(value=bool(self.badge_data.get('truetone')))
         ttk.Checkbutton(rf, text="TrueTone", variable=self.tt_var, command=self.update_preview).pack(anchor=tk.W)
 
-        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=12)
-        ttk.Label(rf, text="Aspect badge-uri", font=('', 10, 'bold')).pack(anchor=tk.W)
-        ttk.Label(rf, text="Culoare brand:").pack(anchor=tk.W)
-        self.brand_bg_var = tk.StringVar(value='')
-        ttk.Entry(rf, textvariable=self.brand_bg_var, width=10).pack(fill=tk.X, pady=(0, 2))
-        ttk.Label(rf, text="(ex: #4CAF50 sau gol = automat)").pack(anchor=tk.W)
-        self.brand_bg_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Poziție brand:").pack(anchor=tk.W)
-        self.brand_pos_var = tk.StringVar(value='top_left')
-        pos_combo = ttk.Combobox(rf, textvariable=self.brand_pos_var, width=14, values=['top_left', 'top_right'])
-        pos_combo.pack(fill=tk.X, pady=(0, 6))
-        pos_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        ttk.Label(rf, text="Formă brand:").pack(anchor=tk.W)
-        self.brand_shape_var = tk.StringVar(value='rounded')
-        shape_combo = ttk.Combobox(rf, textvariable=self.brand_shape_var, width=14, values=['rounded', 'rect', 'pill'])
-        shape_combo.pack(fill=tk.X, pady=(0, 6))
-        shape_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        ttk.Label(rf, text="Font brand (px):").pack(anchor=tk.W)
-        self.brand_font_var = tk.StringVar(value='32')
-        ttk.Spinbox(rf, from_=10, to=72, textvariable=self.brand_font_var, width=6, command=self.update_preview).pack(fill=tk.X, pady=(0, 6))
-        self.brand_font_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Poziție model:").pack(anchor=tk.W)
-        self.model_pos_var = tk.StringVar(value='center')
-        model_pos_combo = ttk.Combobox(rf, textvariable=self.model_pos_var, width=14, values=['center', 'top_left', 'top_right'])
-        model_pos_combo.pack(fill=tk.X, pady=(0, 2))
-        model_pos_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        self.model_pos_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Culoare model:").pack(anchor=tk.W)
-        self.model_bg_var = tk.StringVar(value='')
-        ttk.Entry(rf, textvariable=self.model_bg_var, width=10).pack(fill=tk.X, pady=(0, 6))
-        self.model_bg_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Font model (px):").pack(anchor=tk.W)
-        self.model_font_var = tk.StringVar(value='28')
-        ttk.Spinbox(rf, from_=10, to=60, textvariable=self.model_font_var, width=6, command=self.update_preview).pack(fill=tk.X, pady=(0, 6))
-        self.model_font_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Poziție badge-uri jos:").pack(anchor=tk.W)
-        self.badges_pos_var = tk.StringVar(value='bottom_center')
-        badges_pos_combo = ttk.Combobox(rf, textvariable=self.badges_pos_var, width=14, values=['bottom_center', 'bottom_left', 'bottom_right'])
-        badges_pos_combo.pack(fill=tk.X, pady=(0, 2))
-        badges_pos_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        self.badges_pos_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Culoare badge-uri jos:").pack(anchor=tk.W)
-        self.badges_bg_var = tk.StringVar(value='')
-        ttk.Entry(rf, textvariable=self.badges_bg_var, width=10).pack(fill=tk.X, pady=(0, 6))
-        self.badges_bg_var.trace_add('write', lambda *a: self.update_preview())
-        ttk.Label(rf, text="Font badge-uri (px):").pack(anchor=tk.W)
-        self.badges_font_var = tk.StringVar(value='18')
-        ttk.Spinbox(rf, from_=8, to=36, textvariable=self.badges_font_var, width=6, command=self.update_preview).pack(fill=tk.X, pady=(0, 10))
-        self.badges_font_var.trace_add('write', lambda *a: self.update_preview())
+        # —— Tab Aspect ——
+        tab_style = ttk.Frame(notebook, padding=8)
+        notebook.add(tab_style, text="Aspect")
+        sf = self._make_scroll_frame(tab_style)
 
-        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Button(rf, text="✓ Confirmă", command=self.on_confirm).pack(fill=tk.X, pady=4)
-        ttk.Button(rf, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(fill=tk.X, pady=4)
-        ttk.Button(rf, text="⊘ Fără Badge", command=self.on_skip).pack(fill=tk.X, pady=4)
+        def _spin(parent, label, var, from_, to, default):
+            ttk.Label(parent, text=label).pack(anchor=tk.W)
+            s = ttk.Spinbox(parent, from_=from_, to=to, textvariable=var, width=6, command=self.update_preview)
+            s.pack(fill=tk.X, pady=(0, 6))
+            var.trace_add('write', lambda *a: self.update_preview())
+
+        ttk.Label(sf, text="Brand", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(4, 2))
+        self.brand_bg_var = tk.StringVar(value='')
+        self._color_palette_frame(sf, self.brand_bg_var, "Culoare fundal (gol = automat):").pack(anchor=tk.W, pady=(0, 6))
+        ttk.Label(sf, text="Poziție:").pack(anchor=tk.W)
+        self.brand_pos_var = tk.StringVar(value='top_left')
+        ttk.Combobox(sf, textvariable=self.brand_pos_var, width=14, values=['top_left', 'top_right']).pack(fill=tk.X, pady=(0, 2))
+        self.brand_pos_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(sf, text="Formă:").pack(anchor=tk.W)
+        self.brand_shape_var = tk.StringVar(value='rounded')
+        ttk.Combobox(sf, textvariable=self.brand_shape_var, width=14, values=['rounded', 'rect', 'pill']).pack(fill=tk.X, pady=(0, 6))
+        self.brand_shape_var.trace_add('write', lambda *a: self.update_preview())
+        self.brand_font_var = tk.StringVar(value='42')
+        _spin(sf, "Font brand (px):", self.brand_font_var, 12, 96, 42)
+        self.brand_padding_var = tk.StringVar(value='14')
+        _spin(sf, "Padding brand (px):", self.brand_padding_var, 4, 40, 14)
+
+        ttk.Label(sf, text="Model (centru)", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(8, 2))
+        self.model_bg_var = tk.StringVar(value='')
+        self._color_palette_frame(sf, self.model_bg_var, "Culoare (gol = negru):").pack(anchor=tk.W, pady=(0, 6))
+        ttk.Label(sf, text="Poziție model:").pack(anchor=tk.W)
+        self.model_pos_var = tk.StringVar(value='center')
+        ttk.Combobox(sf, textvariable=self.model_pos_var, width=14, values=['center', 'top_left', 'top_right']).pack(fill=tk.X, pady=(0, 6))
+        self.model_pos_var.trace_add('write', lambda *a: self.update_preview())
+        self.model_font_var = tk.StringVar(value='34')
+        _spin(sf, "Font model (px):", self.model_font_var, 12, 72, 34)
+        self.model_padding_var = tk.StringVar(value='18')
+        _spin(sf, "Padding model (px):", self.model_padding_var, 6, 48, 18)
+
+        ttk.Label(sf, text="Badge-uri jos (120Hz, IC, TT, tehnologie)", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(8, 2))
+        self.badges_bg_var = tk.StringVar(value='')
+        self._color_palette_frame(sf, self.badges_bg_var, "Culoare comună (gol = per tip):").pack(anchor=tk.W, pady=(0, 6))
+        ttk.Label(sf, text="Poziție:").pack(anchor=tk.W)
+        self.badges_pos_var = tk.StringVar(value='bottom_center')
+        ttk.Combobox(sf, textvariable=self.badges_pos_var, width=14, values=['bottom_center', 'bottom_left', 'bottom_right']).pack(fill=tk.X, pady=(0, 6))
+        self.badges_pos_var.trace_add('write', lambda *a: self.update_preview())
+        self.badges_font_var = tk.StringVar(value='24')
+        _spin(sf, "Font badge-uri (px):", self.badges_font_var, 10, 48, 24)
+        self.badges_padding_var = tk.StringVar(value='14')
+        _spin(sf, "Padding badge (px):", self.badges_padding_var, 6, 32, 14)
+        self.badges_spacing_var = tk.StringVar(value='10')
+        _spin(sf, "Spațiu între badge-uri (px):", self.badges_spacing_var, 2, 24, 10)
+        self.bottom_margin_var = tk.StringVar(value='24')
+        _spin(sf, "Margine jos (px):", self.bottom_margin_var, 8, 60, 24)
+        self.margin_var = tk.StringVar(value='20')
+        _spin(sf, "Margine generală (px):", self.margin_var, 8, 60, 20)
+
+        # Butoane acțiuni (sub notebook)
+        btn_frame = ttk.Frame(right_frame)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(btn_frame, text="Reset la ultima confirmată", command=self._reset_to_last_confirmed).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(btn_frame, text="✓ Confirmă", command=self.on_confirm).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="⊘ Fără Badge", command=self.on_skip).pack(side=tk.LEFT, padx=4)
 
     def _delayed_preview(self):
         """Apelează update_preview după ce fereastra e afișată (evită grayout pe unele sisteme)."""
         self.window.update_idletasks()
+        self._apply_last_confirmed_if_first()
+        self.update_preview()
+
+    def _apply_last_confirmed_if_first(self):
+        """La prima afișare, aplică doar STILUL din ultima confirmare (culori, font, poziții). Conținutul rămâne din produsul curent."""
+        if getattr(self, '_style_applied', False) or not self._last_confirmed:
+            return
+        self._style_applied = True
+        style = self._last_confirmed.get('style') or {}
+        self.brand_bg_var.set(style.get('brand_bg') or '')
+        self.brand_pos_var.set(style.get('brand_pos', 'top_left'))
+        self.brand_shape_var.set(style.get('brand_shape', 'rounded'))
+        self.brand_font_var.set(str(style.get('brand_font_size', 42)))
+        self.brand_padding_var.set(str(style.get('brand_padding', 14)))
+        self.model_bg_var.set(style.get('model_bg') or '')
+        self.model_pos_var.set(style.get('model_pos', 'center'))
+        self.model_font_var.set(str(style.get('model_font_size', 34)))
+        self.model_padding_var.set(str(style.get('model_padding', 18)))
+        self.badges_bg_var.set(style.get('badges_bg') or '')
+        self.badges_pos_var.set(style.get('badges_pos', 'bottom_center'))
+        self.badges_font_var.set(str(style.get('badges_font_size', 24)))
+        self.badges_padding_var.set(str(style.get('badges_padding', 14)))
+        self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
+        self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
+        self.margin_var.set(str(style.get('margin', 20)))
+
+    def _reset_to_last_confirmed(self):
+        """Resetează toate câmpurile (conținut + aspect) la ultima confirmare salvată."""
+        if not self._last_confirmed:
+            messagebox.showinfo("Reset", "Nu există o confirmare salvată. Confirmă o dată pentru a putea folosi Reset.")
+            return
+        data = self._last_confirmed.get('data') or {}
+        style = self._last_confirmed.get('style') or {}
+        self.brand_var.set(data.get('brand', '') or '')
+        self.model_var.set(data.get('model', '') or '')
+        self.tech_var.set(data.get('tehnologie', '') or '')
+        self.hz_var.set(data.get('hz_120', False))
+        self.ic_var.set(data.get('ic_transferabil', False))
+        self.tt_var.set(data.get('truetone', False))
+        self.brand_bg_var.set(style.get('brand_bg') or '')
+        self.brand_pos_var.set(style.get('brand_pos', 'top_left'))
+        self.brand_shape_var.set(style.get('brand_shape', 'rounded'))
+        self.brand_font_var.set(str(style.get('brand_font_size', 42)))
+        self.brand_padding_var.set(str(style.get('brand_padding', 14)))
+        self.model_bg_var.set(style.get('model_bg') or '')
+        self.model_pos_var.set(style.get('model_pos', 'center'))
+        self.model_font_var.set(str(style.get('model_font_size', 34)))
+        self.model_padding_var.set(str(style.get('model_padding', 18)))
+        self.badges_bg_var.set(style.get('badges_bg') or '')
+        self.badges_pos_var.set(style.get('badges_pos', 'bottom_center'))
+        self.badges_font_var.set(str(style.get('badges_font_size', 24)))
+        self.badges_padding_var.set(str(style.get('badges_padding', 14)))
+        self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
+        self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
+        self.margin_var.set(str(style.get('margin', 20)))
         self.update_preview()
 
     def _save_current_brand(self):
@@ -458,30 +642,45 @@ class BadgePreviewWindow:
             if b not in vals:
                 self.brand_combo['values'] = vals + [b]
 
+    def _save_current_model(self):
+        m = (self.model_var.get() or '').strip()
+        if m:
+            save_line_to_file(self.script_dir, Path(BADGE_CUSTOM_MODELS_FILE).name, m)
+            vals = list(self.model_combo['values'])
+            if m not in vals:
+                self.model_combo['values'] = vals + [m]
+
+    def _save_current_tech(self):
+        t = (self.tech_var.get() or '').strip()
+        if t:
+            save_line_to_file(self.script_dir, Path(BADGE_CUSTOM_TECH_FILE).name, t)
+            vals = list(self.tech_combo['values'])
+            if t not in vals:
+                self.tech_combo['values'] = vals + [t]
+
     def get_current_style(self):
-        try:
-            brand_font = int(self.brand_font_var.get())
-        except (ValueError, TypeError):
-            brand_font = 32
-        try:
-            model_font = int(self.model_font_var.get())
-        except (ValueError, TypeError):
-            model_font = 28
-        try:
-            badges_font = int(self.badges_font_var.get())
-        except (ValueError, TypeError):
-            badges_font = 18
+        def _int(v, default):
+            try:
+                return int(v.get() if hasattr(v, 'get') else v)
+            except (ValueError, TypeError):
+                return default
         return {
             'brand_bg': (self.brand_bg_var.get() or '').strip() or None,
             'brand_pos': (self.brand_pos_var.get() or 'top_left').strip(),
             'brand_shape': (self.brand_shape_var.get() or 'rounded').strip(),
-            'brand_font_size': brand_font,
+            'brand_font_size': _int(self.brand_font_var, 42),
+            'brand_padding': _int(self.brand_padding_var, 14),
             'model_pos': (self.model_pos_var.get() or 'center').strip(),
             'model_bg': (self.model_bg_var.get() or '').strip() or None,
-            'model_font_size': model_font,
+            'model_font_size': _int(self.model_font_var, 34),
+            'model_padding': _int(self.model_padding_var, 18),
             'badges_pos': (self.badges_pos_var.get() or 'bottom_center').strip(),
             'badges_bg': (self.badges_bg_var.get() or '').strip() or None,
-            'badges_font_size': badges_font,
+            'badges_font_size': _int(self.badges_font_var, 24),
+            'badges_padding': _int(self.badges_padding_var, 14),
+            'badges_spacing': _int(self.badges_spacing_var, 10),
+            'bottom_margin': _int(self.bottom_margin_var, 24),
+            'margin': _int(self.margin_var, 20),
         }
 
     def get_current_badge_data(self):
@@ -520,6 +719,7 @@ class BadgePreviewWindow:
         d = self.get_current_badge_data()
         d.pop('_style', None)
         style = self.get_current_style()
+        save_badge_last_confirmed(self.script_dir, d, style)
         self.callback('confirm', {'data': d, 'style': style})
         self.window.destroy()
 
