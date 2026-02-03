@@ -316,6 +316,7 @@ class BadgePreviewWindow:
         self.window = tk.Toplevel(parent)
         self.window.title("Preview Badge-uri - WebGSM")
         self.window.geometry("1000x780")
+        self.window.minsize(800, 600)
         self.window.transient(parent)
         self.window.grab_set()
         self.image_path = image_path
@@ -323,20 +324,36 @@ class BadgePreviewWindow:
         self.script_dir = script_dir or Path(__file__).resolve().parent
         self.badge_data = dict(detected_data) if detected_data else {}
         self.setup_ui()
-        self.update_preview()
         self.window.protocol("WM_DELETE_WINDOW", self.on_skip)
+        self.window.lift()
+        self.window.focus_force()
+        self.window.after(100, self._delayed_preview)
 
     def setup_ui(self):
         main_frame = ttk.Frame(self.window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
         left_frame = ttk.LabelFrame(main_frame, text="Preview", padding=10)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.preview_label = ttk.Label(left_frame)
+        left_frame.configure(width=600)
+        self.preview_label = tk.Label(left_frame, bg='#404040', fg='white', text='Se încarcă...', font=('', 11))
         self.preview_label.pack(fill=tk.BOTH, expand=True)
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
-        scr = ttk.ScrollableFrame(right_frame, width=320, height=700)
-        scr.pack(fill=tk.BOTH, expand=True)
+        # Frame scrollabil manual (ttk.ScrollableFrame nu există în tkinter standard)
+        canvas = tk.Canvas(right_frame, width=320, highlightthickness=0, bg='#f0f0f0')
+        scrollbar = ttk.Scrollbar(right_frame)
+        scr = ttk.Frame(canvas)
+        scr_window = canvas.create_window((0, 0), window=scr, anchor=tk.NW)
+        def _on_frame_configure(e):
+            canvas.configure(scrollregion=canvas.bbox(tk.ALL))
+        def _on_canvas_configure(e):
+            canvas.itemconfig(scr_window, width=e.width)
+        scr.bind('<Configure>', _on_frame_configure)
+        canvas.bind('<Configure>', _on_canvas_configure)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.configure(command=canvas.yview)
         rf = scr
 
         ttk.Label(rf, text="Brand Piesă (sau introduce manual):").pack(anchor=tk.W)
@@ -428,6 +445,11 @@ class BadgePreviewWindow:
         ttk.Button(rf, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(fill=tk.X, pady=4)
         ttk.Button(rf, text="⊘ Fără Badge", command=self.on_skip).pack(fill=tk.X, pady=4)
 
+    def _delayed_preview(self):
+        """Apelează update_preview după ce fereastra e afișată (evită grayout pe unele sisteme)."""
+        self.window.update_idletasks()
+        self.update_preview()
+
     def _save_current_brand(self):
         b = (self.brand_var.get() or '').strip()
         if b:
@@ -477,15 +499,22 @@ class BadgePreviewWindow:
     def update_preview(self):
         badge_data = self.get_current_badge_data()
         style = badge_data.pop('_style', None)
+        img_path = getattr(self, 'image_path', None)
+        if not img_path or not Path(img_path).exists():
+            self.preview_label.configure(image='', text='Imagine indisponibilă.\nVerifică calea: ' + str(img_path or ''))
+            return
         try:
-            preview_img = generate_badge_preview(self.image_path, badge_data, style=style)
+            preview_img = generate_badge_preview(img_path, badge_data, style=style)
+            if preview_img is None:
+                return
+            preview_img = preview_img.copy()
             preview_img.thumbnail((500, 500), Image.Resampling.LANCZOS)
             if preview_img.mode == 'RGBA':
                 preview_img = preview_img.convert('RGB')
             self.photo = ImageTk.PhotoImage(preview_img)
-            self.preview_label.configure(image=self.photo)
-        except Exception:
-            pass
+            self.preview_label.configure(image=self.photo, text='')
+        except Exception as e:
+            self.preview_label.configure(image='', text=f'Eroare preview:\n{e}')
 
     def on_confirm(self):
         d = self.get_current_badge_data()
