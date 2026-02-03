@@ -97,6 +97,10 @@ ACCESORII_SUBCAT_KEYWORDS = (
 # Prioritate Folii înainte de Unelte (UV film / film protector → Folii Protecție)
 ACCESORII_FOLII_KEYWORDS = ('protector', 'folie', 'tempered', 'glass protector', 'screen protector', 'uv film', 'film protector', 'matt privacy', 'privacy film')
 
+# Fișier pentru branduri custom (un brand per linie) – folosit în preview badge
+BADGE_CUSTOM_BRANDS_FILE = 'data/badge_custom_brands.txt'
+BADGE_DEFAULT_BRANDS = ['', 'JK', 'GX', 'ZY', 'RJ', 'HEX', 'Foxconn', 'Service Pack', 'Apple Original', 'Samsung Original']
+
 
 def _get_badge_fonts():
     """Fonturi pentru badge-uri (Windows / Linux / fallback)."""
@@ -135,11 +139,25 @@ def _draw_text_bbox(draw, xy, text, font):
         return w, h
 
 
-def generate_badge_preview(image_path, badge_data, output_path=None):
+def _parse_hex_color(hex_str, default='#666666'):
+    """Returnează hex cu E6 (alpha) pentru overlay; dacă invalid, default."""
+    s = (hex_str or '').strip()
+    if not s:
+        return default + 'E6' if len(default) == 7 else default
+    if s.startswith('#'):
+        s = s[1:]
+    if len(s) == 6 and all(c in '0123456789AaBbCcDdEeFf' for c in s):
+        return '#' + s + 'E6'
+    return default + 'E6' if len(default) == 7 else default
+
+
+def generate_badge_preview(image_path, badge_data, output_path=None, style=None):
     """
     Generează imagine cu badge-uri (brand, model, tehnologie, 120Hz, IC, TrueTone).
-    Păstrează imaginea originală; salvează varianta cu badge în output_path sau returnează PIL Image.
+    style: dict opțional – brand_bg, brand_pos, brand_shape, brand_font_size, model_bg, model_pos, model_font_size,
+           badges_bg, badges_pos, badges_font_size (poziții: top_left, top_right, center, bottom_center; formă: rounded, rect, pill).
     """
+    style = style or {}
     img = Image.open(image_path)
     if img.mode not in ('RGBA', 'LA'):
         img = img.convert('RGBA')
@@ -148,7 +166,24 @@ def generate_badge_preview(image_path, badge_data, output_path=None):
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     width, height = img.size
-    font_brand, font_model, font_badge = _get_badge_fonts()
+
+    def font_with_size(size_key, default_size):
+        size = int(style.get(size_key, default_size))
+        try:
+            if sys.platform == 'win32':
+                arial = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arialbd.ttf')
+                if os.path.exists(arial):
+                    return ImageFont.truetype(arial, min(max(size, 8), 72))
+            for path in ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf']:
+                if os.path.exists(path):
+                    return ImageFont.truetype(path, min(max(size, 8), 72))
+        except Exception:
+            pass
+        return ImageFont.load_default()
+
+    font_brand = font_with_size('brand_font_size', 32)
+    font_model = font_with_size('model_font_size', 28)
+    font_badge = font_with_size('badges_font_size', 18)
 
     brand_colors = {
         'JK': '#4CAF50', 'GX': '#2196F3', 'ZY': '#FF9800', 'RJ': '#F44336',
@@ -156,24 +191,44 @@ def generate_badge_preview(image_path, badge_data, output_path=None):
         'Apple Original': '#A0A0A0', 'Samsung Original': '#1428A0',
     }
 
+    brand_pos = (style.get('brand_pos') or 'top_left').strip().lower()
+    brand_shape = (style.get('brand_shape') or 'rounded').strip().lower()
+    margin = 20
     if badge_data.get('brand'):
         brand = str(badge_data['brand']).strip()
-        brand_color = brand_colors.get(brand, '#666666')
+        brand_color = _parse_hex_color(style.get('brand_bg') or brand_colors.get(brand, '#666666'))
         brand_text = brand.upper()
         tw, th = _draw_text_bbox(draw, (0, 0), brand_text, font_brand)
-        padding, margin = 12, 20
-        rect = [margin, margin, margin + tw + padding * 2, margin + th + padding * 2]
-        draw.rounded_rectangle(rect, radius=8, fill=brand_color + 'E6')
-        draw.text((margin + padding, margin + padding - 4), brand_text, font=font_brand, fill='white')
+        padding = 12
+        w_rect = tw + padding * 2
+        h_rect = th + padding * 2
+        if 'right' in brand_pos:
+            x0, y0 = width - margin - w_rect, margin
+        else:
+            x0, y0 = margin, margin
+        rect = [x0, y0, x0 + w_rect, y0 + h_rect]
+        radius = 0 if brand_shape == 'rect' else (min(w_rect, h_rect) // 2 if brand_shape == 'pill' else 8)
+        if radius > 0:
+            draw.rounded_rectangle(rect, radius=radius, fill=brand_color)
+        else:
+            draw.rectangle(rect, fill=brand_color)
+        draw.text((x0 + padding, y0 + padding - 4), brand_text, font=font_brand, fill='white')
 
+    model_pos = (style.get('model_pos') or 'center').strip().lower()
+    model_bg = _parse_hex_color(style.get('model_bg'), '#000000')
     if badge_data.get('model'):
         model = str(badge_data['model']).strip()
         tw, th = _draw_text_bbox(draw, (0, 0), model, font_model)
-        x = (width - tw) // 2
-        y = (height // 2) - 20
         padding = 15
+        if 'center' in model_pos:
+            x = (width - tw) // 2
+            y = (height // 2) - 20
+        elif 'left' in model_pos:
+            x, y = margin + padding, (height - th) // 2 - padding
+        else:
+            x, y = width - margin - tw - padding, (height - th) // 2 - padding
         rect = [x - padding, y - padding, x + tw + padding, y + th + padding]
-        draw.rounded_rectangle(rect, radius=10, fill=(0, 0, 0, 180))
+        draw.rounded_rectangle(rect, radius=10, fill=model_bg if len(model_bg) > 7 else model_bg + 'B3')
         draw.text((x, y - 2), model, font=font_model, fill='white')
 
     badges = []
@@ -186,22 +241,33 @@ def generate_badge_preview(image_path, badge_data, output_path=None):
     if badge_data.get('truetone'):
         badges.append(('tt', 'TT ✓'))
 
+    badges_pos = (style.get('badges_pos') or 'bottom_center').strip().lower()
+    badges_bg = style.get('badges_bg')
+    badge_colors_map = {'tech': '#2196F3', 'hz': '#9C27B0', 'ic': '#4CAF50', 'tt': '#FF9800'}
     if badges:
-        badge_height, badge_padding, badge_margin, bottom_margin = 30, 10, 8, 20
+        badge_height = int(style.get('badges_font_size', 18)) + 14
+        badge_padding, badge_margin, bottom_margin = 10, 8, 20
         badge_widths = []
         for _, text in badges:
             tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
             badge_widths.append(tw + badge_padding * 2)
         total_width = sum(badge_widths) + badge_margin * (len(badges) - 1)
-        start_x = (width - total_width) // 2
+        if 'bottom_right' in badges_pos:
+            start_x = width - margin - total_width
+        elif 'bottom_left' in badges_pos:
+            start_x = margin
+        else:
+            start_x = (width - total_width) // 2
         y = height - bottom_margin - badge_height
-        badge_colors_map = {'tech': '#2196F3', 'hz': '#9C27B0', 'ic': '#4CAF50', 'tt': '#FF9800'}
         current_x = start_x
+        override_bg = style.get('badges_bg')
         for i, (badge_type, text) in enumerate(badges):
             w = badge_widths[i]
-            color = badge_colors_map.get(badge_type, '#666666')
+            color = _parse_hex_color(override_bg) if override_bg else (badge_colors_map.get(badge_type, '#666666') + 'E6')
+            if len(color) == 7:
+                color = color + 'E6'
             rect = [current_x, y, current_x + w, y + badge_height]
-            draw.rounded_rectangle(rect, radius=5, fill=color + 'E6')
+            draw.rounded_rectangle(rect, radius=5, fill=color)
             tw, _ = _draw_text_bbox(draw, (0, 0), text, font_badge)
             text_x = current_x + (w - tw) // 2
             draw.text((text_x, y + 5), text, font=font_badge, fill='white')
@@ -214,17 +280,47 @@ def generate_badge_preview(image_path, badge_data, output_path=None):
     return img
 
 
-class BadgePreviewWindow:
-    """Fereastră pentru preview și confirmare badge-uri pe prima imagine."""
+def load_custom_brands(script_dir):
+    """Încarcă lista de branduri custom din data/badge_custom_brands.txt."""
+    path = Path(script_dir) / BADGE_CUSTOM_BRANDS_FILE
+    if not path.exists():
+        return []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except Exception:
+        return []
 
-    def __init__(self, parent, image_path, detected_data, callback):
+
+def save_custom_brand(script_dir, brand_name):
+    """Adaugă un brand în data/badge_custom_brands.txt (dacă nu există)."""
+    if not (brand_name and brand_name.strip()):
+        return
+    path = Path(script_dir) / BADGE_CUSTOM_BRANDS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = set(load_custom_brands(script_dir))
+    b = brand_name.strip()
+    if b in existing:
+        return
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(b + '\n')
+    except Exception:
+        pass
+
+
+class BadgePreviewWindow:
+    """Fereastră pentru preview și confirmare badge-uri – toate câmpurile editabile + aspect (culoare, poziție, formă, font)."""
+
+    def __init__(self, parent, image_path, detected_data, callback, script_dir=None):
         self.window = tk.Toplevel(parent)
         self.window.title("Preview Badge-uri - WebGSM")
-        self.window.geometry("900x700")
+        self.window.geometry("1000x780")
         self.window.transient(parent)
         self.window.grab_set()
         self.image_path = image_path
         self.callback = callback
+        self.script_dir = script_dir or Path(__file__).resolve().parent
         self.badge_data = dict(detected_data) if detected_data else {}
         self.setup_ui()
         self.update_preview()
@@ -237,40 +333,137 @@ class BadgePreviewWindow:
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.preview_label = ttk.Label(left_frame)
         self.preview_label.pack(fill=tk.BOTH, expand=True)
-        right_frame = ttk.LabelFrame(main_frame, text="Setări Badge-uri", padding=10)
+        right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
-        ttk.Label(right_frame, text="Brand Piesă:").pack(anchor=tk.W)
+        scr = ttk.ScrollableFrame(right_frame, width=320, height=700)
+        scr.pack(fill=tk.BOTH, expand=True)
+        rf = scr
+
+        ttk.Label(rf, text="Brand Piesă (sau introduce manual):").pack(anchor=tk.W)
+        brand_values = BADGE_DEFAULT_BRANDS + load_custom_brands(self.script_dir)
         self.brand_var = tk.StringVar(value=self.badge_data.get('brand', '') or '')
-        brand_combo = ttk.Combobox(right_frame, textvariable=self.brand_var, width=20)
-        brand_combo['values'] = ['', 'JK', 'GX', 'ZY', 'RJ', 'HEX', 'Foxconn', 'Service Pack', 'Apple Original', 'Samsung Original']
-        brand_combo.pack(fill=tk.X, pady=(0, 10))
-        brand_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        ttk.Label(right_frame, text="Model Compatibil:").pack(anchor=tk.W)
+        self.brand_combo = ttk.Combobox(rf, textvariable=self.brand_var, width=22)
+        self.brand_combo['values'] = list(dict.fromkeys([''] + [b for b in brand_values if b]))
+        self.brand_combo.pack(fill=tk.X, pady=(0, 4))
+        self.brand_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        self.brand_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+        ttk.Button(rf, text="💾 Salvează brandul curent în listă", command=self._save_current_brand).pack(anchor=tk.W, pady=(0, 10))
+
+        ttk.Label(rf, text="Model Compatibil:").pack(anchor=tk.W)
         self.model_var = tk.StringVar(value=self.badge_data.get('model', '') or '')
-        model_combo = ttk.Combobox(right_frame, textvariable=self.model_var, width=20)
+        model_combo = ttk.Combobox(rf, textvariable=self.model_var, width=22)
         model_combo['values'] = ['', 'iPhone 17 Pro Max', 'iPhone 17 Pro', 'iPhone 17', 'iPhone 16 Pro Max', 'iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro Max', 'iPhone 15 Pro', 'iPhone 15', 'iPhone 14 Pro Max', 'iPhone 14 Pro', 'iPhone 14', 'iPhone 13', 'iPhone 12', 'iPhone 11', 'Galaxy S24 Ultra', 'Galaxy S24', 'Galaxy S23 Ultra', 'Galaxy A54']
         model_combo.pack(fill=tk.X, pady=(0, 10))
         model_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        ttk.Label(right_frame, text="Tehnologie:").pack(anchor=tk.W)
+        model_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+
+        ttk.Label(rf, text="Tehnologie:").pack(anchor=tk.W)
         self.tech_var = tk.StringVar(value=self.badge_data.get('tehnologie', '') or '')
-        tech_combo = ttk.Combobox(right_frame, textvariable=self.tech_var, width=20)
+        tech_combo = ttk.Combobox(rf, textvariable=self.tech_var, width=22)
         tech_combo['values'] = ['', 'Soft OLED', 'Hard OLED', 'OLED', 'Incell', 'LCD', 'TFT', 'AMOLED']
         tech_combo.pack(fill=tk.X, pady=(0, 10))
         tech_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        ttk.Separator(right_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        tech_combo.bind('<KeyRelease>', lambda e: self.update_preview())
+
+        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
         self.hz_var = tk.BooleanVar(value=bool(self.badge_data.get('hz_120')))
-        ttk.Checkbutton(right_frame, text="120Hz", variable=self.hz_var, command=self.update_preview).pack(anchor=tk.W)
+        ttk.Checkbutton(rf, text="120Hz", variable=self.hz_var, command=self.update_preview).pack(anchor=tk.W)
         self.ic_var = tk.BooleanVar(value=bool(self.badge_data.get('ic_transferabil')))
-        ttk.Checkbutton(right_frame, text="IC Transferabil", variable=self.ic_var, command=self.update_preview).pack(anchor=tk.W)
+        ttk.Checkbutton(rf, text="IC Transferabil", variable=self.ic_var, command=self.update_preview).pack(anchor=tk.W)
         self.tt_var = tk.BooleanVar(value=bool(self.badge_data.get('truetone')))
-        ttk.Checkbutton(right_frame, text="TrueTone", variable=self.tt_var, command=self.update_preview).pack(anchor=tk.W)
-        ttk.Separator(right_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=15)
-        ttk.Button(right_frame, text="✓ Confirmă", command=self.on_confirm).pack(fill=tk.X, pady=5)
-        ttk.Button(right_frame, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(fill=tk.X, pady=5)
-        ttk.Button(right_frame, text="⊘ Fără Badge", command=self.on_skip).pack(fill=tk.X, pady=5)
+        ttk.Checkbutton(rf, text="TrueTone", variable=self.tt_var, command=self.update_preview).pack(anchor=tk.W)
+
+        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=12)
+        ttk.Label(rf, text="Aspect badge-uri", font=('', 10, 'bold')).pack(anchor=tk.W)
+        ttk.Label(rf, text="Culoare brand:").pack(anchor=tk.W)
+        self.brand_bg_var = tk.StringVar(value='')
+        ttk.Entry(rf, textvariable=self.brand_bg_var, width=10).pack(fill=tk.X, pady=(0, 2))
+        ttk.Label(rf, text="(ex: #4CAF50 sau gol = automat)").pack(anchor=tk.W)
+        self.brand_bg_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Poziție brand:").pack(anchor=tk.W)
+        self.brand_pos_var = tk.StringVar(value='top_left')
+        pos_combo = ttk.Combobox(rf, textvariable=self.brand_pos_var, width=14, values=['top_left', 'top_right'])
+        pos_combo.pack(fill=tk.X, pady=(0, 6))
+        pos_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        ttk.Label(rf, text="Formă brand:").pack(anchor=tk.W)
+        self.brand_shape_var = tk.StringVar(value='rounded')
+        shape_combo = ttk.Combobox(rf, textvariable=self.brand_shape_var, width=14, values=['rounded', 'rect', 'pill'])
+        shape_combo.pack(fill=tk.X, pady=(0, 6))
+        shape_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        ttk.Label(rf, text="Font brand (px):").pack(anchor=tk.W)
+        self.brand_font_var = tk.StringVar(value='32')
+        ttk.Spinbox(rf, from_=10, to=72, textvariable=self.brand_font_var, width=6, command=self.update_preview).pack(fill=tk.X, pady=(0, 6))
+        self.brand_font_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Poziție model:").pack(anchor=tk.W)
+        self.model_pos_var = tk.StringVar(value='center')
+        model_pos_combo = ttk.Combobox(rf, textvariable=self.model_pos_var, width=14, values=['center', 'top_left', 'top_right'])
+        model_pos_combo.pack(fill=tk.X, pady=(0, 2))
+        model_pos_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        self.model_pos_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Culoare model:").pack(anchor=tk.W)
+        self.model_bg_var = tk.StringVar(value='')
+        ttk.Entry(rf, textvariable=self.model_bg_var, width=10).pack(fill=tk.X, pady=(0, 6))
+        self.model_bg_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Font model (px):").pack(anchor=tk.W)
+        self.model_font_var = tk.StringVar(value='28')
+        ttk.Spinbox(rf, from_=10, to=60, textvariable=self.model_font_var, width=6, command=self.update_preview).pack(fill=tk.X, pady=(0, 6))
+        self.model_font_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Poziție badge-uri jos:").pack(anchor=tk.W)
+        self.badges_pos_var = tk.StringVar(value='bottom_center')
+        badges_pos_combo = ttk.Combobox(rf, textvariable=self.badges_pos_var, width=14, values=['bottom_center', 'bottom_left', 'bottom_right'])
+        badges_pos_combo.pack(fill=tk.X, pady=(0, 2))
+        badges_pos_combo.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        self.badges_pos_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Culoare badge-uri jos:").pack(anchor=tk.W)
+        self.badges_bg_var = tk.StringVar(value='')
+        ttk.Entry(rf, textvariable=self.badges_bg_var, width=10).pack(fill=tk.X, pady=(0, 6))
+        self.badges_bg_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(rf, text="Font badge-uri (px):").pack(anchor=tk.W)
+        self.badges_font_var = tk.StringVar(value='18')
+        ttk.Spinbox(rf, from_=8, to=36, textvariable=self.badges_font_var, width=6, command=self.update_preview).pack(fill=tk.X, pady=(0, 10))
+        self.badges_font_var.trace_add('write', lambda *a: self.update_preview())
+
+        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Button(rf, text="✓ Confirmă", command=self.on_confirm).pack(fill=tk.X, pady=4)
+        ttk.Button(rf, text="⟳ Aplică la toate similare (Batch)", command=self.on_batch).pack(fill=tk.X, pady=4)
+        ttk.Button(rf, text="⊘ Fără Badge", command=self.on_skip).pack(fill=tk.X, pady=4)
+
+    def _save_current_brand(self):
+        b = (self.brand_var.get() or '').strip()
+        if b:
+            save_custom_brand(self.script_dir, b)
+            vals = list(self.brand_combo['values'])
+            if b not in vals:
+                self.brand_combo['values'] = vals + [b]
+
+    def get_current_style(self):
+        try:
+            brand_font = int(self.brand_font_var.get())
+        except (ValueError, TypeError):
+            brand_font = 32
+        try:
+            model_font = int(self.model_font_var.get())
+        except (ValueError, TypeError):
+            model_font = 28
+        try:
+            badges_font = int(self.badges_font_var.get())
+        except (ValueError, TypeError):
+            badges_font = 18
+        return {
+            'brand_bg': (self.brand_bg_var.get() or '').strip() or None,
+            'brand_pos': (self.brand_pos_var.get() or 'top_left').strip(),
+            'brand_shape': (self.brand_shape_var.get() or 'rounded').strip(),
+            'brand_font_size': brand_font,
+            'model_pos': (self.model_pos_var.get() or 'center').strip(),
+            'model_bg': (self.model_bg_var.get() or '').strip() or None,
+            'model_font_size': model_font,
+            'badges_pos': (self.badges_pos_var.get() or 'bottom_center').strip(),
+            'badges_bg': (self.badges_bg_var.get() or '').strip() or None,
+            'badges_font_size': badges_font,
+        }
 
     def get_current_badge_data(self):
-        return {
+        data = {
             'brand': (self.brand_var.get() or '').strip() or None,
             'model': (self.model_var.get() or '').strip() or None,
             'tehnologie': (self.tech_var.get() or '').strip() or None,
@@ -278,11 +471,14 @@ class BadgePreviewWindow:
             'ic_transferabil': self.ic_var.get(),
             'truetone': self.tt_var.get(),
         }
+        data['_style'] = self.get_current_style()
+        return data
 
     def update_preview(self):
         badge_data = self.get_current_badge_data()
+        style = badge_data.pop('_style', None)
         try:
-            preview_img = generate_badge_preview(self.image_path, badge_data)
+            preview_img = generate_badge_preview(self.image_path, badge_data, style=style)
             preview_img.thumbnail((500, 500), Image.Resampling.LANCZOS)
             if preview_img.mode == 'RGBA':
                 preview_img = preview_img.convert('RGB')
@@ -292,11 +488,17 @@ class BadgePreviewWindow:
             pass
 
     def on_confirm(self):
-        self.callback('confirm', self.get_current_badge_data())
+        d = self.get_current_badge_data()
+        d.pop('_style', None)
+        style = self.get_current_style()
+        self.callback('confirm', {'data': d, 'style': style})
         self.window.destroy()
 
     def on_batch(self):
-        self.callback('batch', self.get_current_badge_data())
+        d = self.get_current_badge_data()
+        d.pop('_style', None)
+        style = self.get_current_style()
+        self.callback('batch', {'data': d, 'style': style})
         self.window.destroy()
 
     def on_skip(self):
@@ -1550,14 +1752,14 @@ class ImportProduse:
         self.progress_var.set("Import oprit")
 
     def check_batch_badge_settings(self, product_data):
-        """Verifică dacă există setări batch pentru acest produs (model compatibil)."""
+        """Verifică dacă există setări batch pentru acest produs (model compatibil). Returnează (badge_data, style) sau None."""
         if not getattr(self, 'batch_badge_settings', None):
             return None
         batch = self.batch_badge_settings
         batch_model = (batch.get('model') or '').strip()
         current_model = (product_data.get('pa_model') or '').strip()
         if batch_model and current_model and batch_model in current_model:
-            return batch.get('data')
+            return batch.get('data'), batch.get('style')
         return None
 
     def _run_badge_preview(self, image_path, product_data):
@@ -1591,10 +1793,11 @@ class ImportProduse:
         if not first_path or not Path(first_path).exists():
             return images_list
 
-        batch_data = self.check_batch_badge_settings(product_data)
-        if batch_data:
+        batch_result = self.check_batch_badge_settings(product_data)
+        if batch_result is not None:
+            batch_data, batch_style = batch_result
             out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-            generate_badge_preview(first_path, batch_data, out_path)
+            generate_badge_preview(first_path, batch_data, out_path, style=batch_style)
             if isinstance(first, dict):
                 images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
             else:
@@ -1609,21 +1812,23 @@ class ImportProduse:
         res = self._badge_result
         if not res:
             return images_list
-        action, data = res.get('action'), res.get('data')
+        action, payload = res.get('action'), res.get('data')
         if action == 'skip':
             return images_list
-        if action == 'confirm' and data:
+        badge_data = payload.get('data') if isinstance(payload, dict) else payload
+        style = payload.get('style') if isinstance(payload, dict) else None
+        if action == 'confirm' and badge_data:
             out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-            generate_badge_preview(first_path, data, out_path)
+            generate_badge_preview(first_path, badge_data, out_path, style=style)
             if isinstance(first, dict):
                 images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
             else:
                 images_list[0] = out_path
             self.log(f"   🏷️ Badge confirmat pe prima imagine", "INFO")
-        elif action == 'batch' and data:
-            self.batch_badge_settings = {'model': data.get('model'), 'data': data}
+        elif action == 'batch' and badge_data:
+            self.batch_badge_settings = {'model': badge_data.get('model'), 'data': badge_data, 'style': style}
             out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
-            generate_badge_preview(first_path, data, out_path)
+            generate_badge_preview(first_path, badge_data, out_path, style=style)
             if isinstance(first, dict):
                 images_list[0] = {**first, 'local_path': out_path, 'name': Path(out_path).name}
             else:
