@@ -148,13 +148,40 @@ def _draw_text_bbox(draw, xy, text, font):
 
 
 def _draw_text_centered(draw, rect, text, font, fill='white'):
-    """Desenează text centrat orizontal și vertical în rect [x0,y0,x1,y1]. Aliniere corectă în pill/rounded."""
-    tw, th = _draw_text_bbox(draw, (0, 0), text, font)
+    """Desenează text centrat orizontal și vertical în rect. Folosește anchor='mm' pentru aliniere corectă pe înălțime."""
     x0, y0, x1, y1 = rect
-    w, h = x1 - x0, y1 - y0
-    tx = x0 + (w - tw) // 2
-    ty = y0 + (h - th) // 2
-    draw.text((tx, ty), text, font=font, fill=fill)
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    try:
+        draw.text((cx, cy), text, font=font, fill=fill, anchor='mm')
+    except TypeError:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        left, top, right, bottom = bbox
+        tw, th = right - left, bottom - top
+        text_cx = (left + right) / 2
+        text_cy = (top + bottom) / 2
+        draw.text((int(cx - text_cx), int(cy - text_cy)), text, font=font, fill=fill)
+
+
+def _draw_text_vertical_centered(overlay, draw, rect, text, font, fill='white'):
+    """Desenează text rotit 90° (vertical), centrat în rect. Pill vertical = text pe verticală."""
+    x0, y0, x1, y1 = rect
+    tw, th = _draw_text_bbox(draw, (0, 0), text, font)
+    pad = 8
+    w_canvas = max(int(th) + pad * 2, 4)
+    h_canvas = max(int(tw) + pad * 2, 4)
+    small = Image.new('RGBA', (w_canvas, h_canvas), (0, 0, 0, 0))
+    small_draw = ImageDraw.Draw(small)
+    cx_s, cy_s = w_canvas / 2, h_canvas / 2
+    try:
+        small_draw.text((cx_s, cy_s), text, font=font, fill=fill, anchor='mm')
+    except TypeError:
+        small_draw.text((pad, pad), text, font=font, fill=fill)
+    rotated = small.rotate(90, expand=True)
+    rw, rh = rotated.size
+    rx0 = int(x0 + (x1 - x0 - rw) / 2)
+    ry0 = int(y0 + (y1 - y0 - rh) / 2)
+    overlay.paste(rotated, (rx0, ry0), rotated)
 
 
 def _parse_hex_color(hex_str, default='#666666'):
@@ -209,29 +236,43 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
         'Apple Original': '#A0A0A0', 'Samsung Original': '#1428A0',
     }
 
+    margin = int(style.get('margin', 20))
+    brand_offset_x = int(style.get('brand_offset_x', 0))
+    brand_offset_y = int(style.get('brand_offset_y', 0))
     brand_pos = (style.get('brand_pos') or 'top_left').strip().lower()
     brand_shape = (style.get('brand_shape') or 'rounded').strip().lower()
-    margin = int(style.get('margin', 20))
     if badge_data.get('brand'):
         brand = str(badge_data['brand']).strip()
         brand_color = _parse_hex_color(style.get('brand_bg') or brand_colors.get(brand, '#666666'))
         brand_text = brand.upper()
         tw, th = _draw_text_bbox(draw, (0, 0), brand_text, font_brand)
         padding = int(style.get('brand_padding', 14))
-        w_rect = tw + padding * 2
-        h_rect = th + padding * 2
-        if 'right' in brand_pos:
-            x0, y0 = width - margin - w_rect, margin
+        vertical_pill = brand_shape == 'pill_vertical'
+        if vertical_pill:
+            w_rect = th + padding * 2
+            h_rect = tw + padding * 2
         else:
-            x0, y0 = margin, margin
+            w_rect = tw + padding * 2
+            h_rect = th + padding * 2
+        if 'right' in brand_pos:
+            x0 = width - margin - w_rect + brand_offset_x
+            y0 = margin + brand_offset_y
+        else:
+            x0 = margin + brand_offset_x
+            y0 = margin + brand_offset_y
         rect = [x0, y0, x0 + w_rect, y0 + h_rect]
-        radius = 0 if brand_shape == 'rect' else (min(w_rect, h_rect) // 2 if brand_shape == 'pill' else 10)
+        radius = 0 if brand_shape == 'rect' else (min(w_rect, h_rect) // 2 if brand_shape in ('pill', 'pill_vertical') else 10)
         if radius > 0:
             draw.rounded_rectangle(rect, radius=radius, fill=brand_color)
         else:
             draw.rectangle(rect, fill=brand_color)
-        _draw_text_centered(draw, rect, brand_text, font_brand, 'white')
+        if vertical_pill:
+            _draw_text_vertical_centered(overlay, draw, rect, brand_text, font_brand, 'white')
+        else:
+            _draw_text_centered(draw, rect, brand_text, font_brand, 'white')
 
+    model_offset_x = int(style.get('model_offset_x', 0))
+    model_offset_y = int(style.get('model_offset_y', 0))
     model_pos = (style.get('model_pos') or 'center').strip().lower()
     model_bg = _parse_hex_color(style.get('model_bg'), '#000000')
     model_padding = int(style.get('model_padding', 18))
@@ -240,15 +281,20 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
         tw, th = _draw_text_bbox(draw, (0, 0), model, font_model)
         rw, rh = tw + model_padding * 2, th + model_padding * 2
         if 'center' in model_pos:
-            x0 = (width - rw) // 2
-            y0 = (height - rh) // 2 - 20
+            x0 = (width - rw) // 2 + model_offset_x
+            y0 = (height - rh) // 2 - 20 + model_offset_y
         elif 'left' in model_pos:
-            x0, y0 = margin, (height - rh) // 2
+            x0 = margin + model_offset_x
+            y0 = (height - rh) // 2 + model_offset_y
         else:
-            x0, y0 = width - margin - rw, (height - rh) // 2
+            x0 = width - margin - rw + model_offset_x
+            y0 = (height - rh) // 2 + model_offset_y
         rect = [x0, y0, x0 + rw, y0 + rh]
         draw.rounded_rectangle(rect, radius=12, fill=model_bg if len(model_bg) > 7 else model_bg + 'B3')
         _draw_text_centered(draw, rect, model, font_model, 'white')
+
+    badges_offset_x = int(style.get('badges_offset_x', 0))
+    badges_offset_y = int(style.get('badges_offset_y', 0))
 
     badges = []
     if badge_data.get('tehnologie'):
@@ -279,7 +325,8 @@ def generate_badge_preview(image_path, badge_data, output_path=None, style=None)
             start_x = margin
         else:
             start_x = (width - total_width) // 2
-        y = height - bottom_margin - badge_height
+        start_x += badges_offset_x
+        y = height - bottom_margin - badge_height + badges_offset_y
         current_x = start_x
         override_bg = style.get('badges_bg')
         for i, (badge_type, text) in enumerate(badges):
@@ -372,13 +419,13 @@ def load_badge_last_confirmed(script_dir):
         return None
 
 
-def save_badge_last_confirmed(script_dir, data_dict, style_dict):
+def save_badge_last_confirmed(script_dir, data_dict, style_dict, apply_badges=True):
     """Salvează ultima confirmare (pentru Reset)."""
     path = _badge_data_dir(script_dir) / Path(BADGE_LAST_CONFIRMED_FILE).name
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump({'data': data_dict, 'style': style_dict or {}}, f, indent=2)
+            json.dump({'data': data_dict, 'style': style_dict or {}, 'apply_badges': apply_badges}, f, indent=2)
     except Exception:
         pass
 
@@ -469,6 +516,10 @@ class BadgePreviewWindow:
         notebook.add(tab_content, text="Conținut")
         rf = self._make_scroll_frame(tab_content)
 
+        self.apply_badges_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rf, text="Aplică badge-uri pe imagine (debifează pentru a nu pune badge-uri)", variable=self.apply_badges_var, command=self.update_preview).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Separator(rf, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 8))
+
         ttk.Label(rf, text="Brand piesa (sau introduce manual):").pack(anchor=tk.W)
         brand_values = BADGE_DEFAULT_BRANDS + load_custom_brands(self.script_dir)
         self.brand_var = tk.StringVar(value=self.badge_data.get('brand', '') or '')
@@ -529,12 +580,17 @@ class BadgePreviewWindow:
         self.brand_pos_var.trace_add('write', lambda *a: self.update_preview())
         ttk.Label(sf, text="Formă:").pack(anchor=tk.W)
         self.brand_shape_var = tk.StringVar(value='rounded')
-        ttk.Combobox(sf, textvariable=self.brand_shape_var, width=14, values=['rounded', 'rect', 'pill']).pack(fill=tk.X, pady=(0, 6))
+        ttk.Combobox(sf, textvariable=self.brand_shape_var, width=18, values=['rounded', 'rect', 'pill', 'pill_vertical']).pack(fill=tk.X, pady=(0, 2))
         self.brand_shape_var.trace_add('write', lambda *a: self.update_preview())
+        ttk.Label(sf, text="(pill_vertical = pill cu text pe verticală)").pack(anchor=tk.W)
         self.brand_font_var = tk.StringVar(value='42')
         _spin(sf, "Font brand (px):", self.brand_font_var, 12, 96, 42)
         self.brand_padding_var = tk.StringVar(value='14')
         _spin(sf, "Padding brand (px):", self.brand_padding_var, 4, 40, 14)
+        self.brand_offset_x_var = tk.StringVar(value='0')
+        _spin(sf, "Offset X brand (px):", self.brand_offset_x_var, -300, 300, 0)
+        self.brand_offset_y_var = tk.StringVar(value='0')
+        _spin(sf, "Offset Y brand (px):", self.brand_offset_y_var, -300, 300, 0)
 
         ttk.Label(sf, text="Model (centru)", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(8, 2))
         self.model_bg_var = tk.StringVar(value='')
@@ -547,6 +603,10 @@ class BadgePreviewWindow:
         _spin(sf, "Font model (px):", self.model_font_var, 12, 72, 34)
         self.model_padding_var = tk.StringVar(value='18')
         _spin(sf, "Padding model (px):", self.model_padding_var, 6, 48, 18)
+        self.model_offset_x_var = tk.StringVar(value='0')
+        _spin(sf, "Offset X model (px):", self.model_offset_x_var, -300, 300, 0)
+        self.model_offset_y_var = tk.StringVar(value='0')
+        _spin(sf, "Offset Y model (px):", self.model_offset_y_var, -300, 300, 0)
 
         ttk.Label(sf, text="Badge-uri jos (120Hz, IC, TT, tehnologie)", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(8, 2))
         self.badges_bg_var = tk.StringVar(value='')
@@ -561,6 +621,10 @@ class BadgePreviewWindow:
         _spin(sf, "Padding badge (px):", self.badges_padding_var, 6, 32, 14)
         self.badges_spacing_var = tk.StringVar(value='10')
         _spin(sf, "Spațiu între badge-uri (px):", self.badges_spacing_var, 2, 24, 10)
+        self.badges_offset_x_var = tk.StringVar(value='0')
+        _spin(sf, "Offset X badge-uri (px):", self.badges_offset_x_var, -300, 300, 0)
+        self.badges_offset_y_var = tk.StringVar(value='0')
+        _spin(sf, "Offset Y badge-uri (px):", self.badges_offset_y_var, -300, 300, 0)
         self.bottom_margin_var = tk.StringVar(value='24')
         _spin(sf, "Margine jos (px):", self.bottom_margin_var, 8, 60, 24)
         self.margin_var = tk.StringVar(value='20')
@@ -586,6 +650,7 @@ class BadgePreviewWindow:
             return
         self._style_applied = True
         style = self._last_confirmed.get('style') or {}
+        self.apply_badges_var.set(self._last_confirmed.get('apply_badges', True))
         self.brand_bg_var.set(style.get('brand_bg') or '')
         self.brand_pos_var.set(style.get('brand_pos', 'top_left'))
         self.brand_shape_var.set(style.get('brand_shape', 'rounded'))
@@ -600,6 +665,12 @@ class BadgePreviewWindow:
         self.badges_font_var.set(str(style.get('badges_font_size', 24)))
         self.badges_padding_var.set(str(style.get('badges_padding', 14)))
         self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
+        self.brand_offset_x_var.set(str(style.get('brand_offset_x', 0)))
+        self.brand_offset_y_var.set(str(style.get('brand_offset_y', 0)))
+        self.model_offset_x_var.set(str(style.get('model_offset_x', 0)))
+        self.model_offset_y_var.set(str(style.get('model_offset_y', 0)))
+        self.badges_offset_x_var.set(str(style.get('badges_offset_x', 0)))
+        self.badges_offset_y_var.set(str(style.get('badges_offset_y', 0)))
         self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
         self.margin_var.set(str(style.get('margin', 20)))
 
@@ -610,6 +681,7 @@ class BadgePreviewWindow:
             return
         data = self._last_confirmed.get('data') or {}
         style = self._last_confirmed.get('style') or {}
+        self.apply_badges_var.set(self._last_confirmed.get('apply_badges', True))
         self.brand_var.set(data.get('brand', '') or '')
         self.model_var.set(data.get('model', '') or '')
         self.tech_var.set(data.get('tehnologie', '') or '')
@@ -630,6 +702,12 @@ class BadgePreviewWindow:
         self.badges_font_var.set(str(style.get('badges_font_size', 24)))
         self.badges_padding_var.set(str(style.get('badges_padding', 14)))
         self.badges_spacing_var.set(str(style.get('badges_spacing', 10)))
+        self.brand_offset_x_var.set(str(style.get('brand_offset_x', 0)))
+        self.brand_offset_y_var.set(str(style.get('brand_offset_y', 0)))
+        self.model_offset_x_var.set(str(style.get('model_offset_x', 0)))
+        self.model_offset_y_var.set(str(style.get('model_offset_y', 0)))
+        self.badges_offset_x_var.set(str(style.get('badges_offset_x', 0)))
+        self.badges_offset_y_var.set(str(style.get('badges_offset_y', 0)))
         self.bottom_margin_var.set(str(style.get('bottom_margin', 24)))
         self.margin_var.set(str(style.get('margin', 20)))
         self.update_preview()
@@ -670,15 +748,21 @@ class BadgePreviewWindow:
             'brand_shape': (self.brand_shape_var.get() or 'rounded').strip(),
             'brand_font_size': _int(self.brand_font_var, 42),
             'brand_padding': _int(self.brand_padding_var, 14),
+            'brand_offset_x': _int(self.brand_offset_x_var, 0),
+            'brand_offset_y': _int(self.brand_offset_y_var, 0),
             'model_pos': (self.model_pos_var.get() or 'center').strip(),
             'model_bg': (self.model_bg_var.get() or '').strip() or None,
             'model_font_size': _int(self.model_font_var, 34),
             'model_padding': _int(self.model_padding_var, 18),
+            'model_offset_x': _int(self.model_offset_x_var, 0),
+            'model_offset_y': _int(self.model_offset_y_var, 0),
             'badges_pos': (self.badges_pos_var.get() or 'bottom_center').strip(),
             'badges_bg': (self.badges_bg_var.get() or '').strip() or None,
             'badges_font_size': _int(self.badges_font_var, 24),
             'badges_padding': _int(self.badges_padding_var, 14),
             'badges_spacing': _int(self.badges_spacing_var, 10),
+            'badges_offset_x': _int(self.badges_offset_x_var, 0),
+            'badges_offset_y': _int(self.badges_offset_y_var, 0),
             'bottom_margin': _int(self.bottom_margin_var, 24),
             'margin': _int(self.margin_var, 20),
         }
@@ -696,14 +780,18 @@ class BadgePreviewWindow:
         return data
 
     def update_preview(self):
-        badge_data = self.get_current_badge_data()
-        style = badge_data.pop('_style', None)
         img_path = getattr(self, 'image_path', None)
         if not img_path or not Path(img_path).exists():
             self.preview_label.configure(image='', text='Imagine indisponibilă.\nVerifică calea: ' + str(img_path or ''))
             return
+        apply_badges = getattr(self, 'apply_badges_var', None) and self.apply_badges_var.get()
         try:
-            preview_img = generate_badge_preview(img_path, badge_data, style=style)
+            if not apply_badges:
+                preview_img = Image.open(img_path).convert('RGB')
+            else:
+                badge_data = self.get_current_badge_data()
+                style = badge_data.pop('_style', None)
+                preview_img = generate_badge_preview(img_path, badge_data, style=style)
             if preview_img is None:
                 return
             preview_img = preview_img.copy()
@@ -716,18 +804,20 @@ class BadgePreviewWindow:
             self.preview_label.configure(image='', text=f'Eroare preview:\n{e}')
 
     def on_confirm(self):
+        apply_badges = self.apply_badges_var.get()
         d = self.get_current_badge_data()
         d.pop('_style', None)
         style = self.get_current_style()
-        save_badge_last_confirmed(self.script_dir, d, style)
-        self.callback('confirm', {'data': d, 'style': style})
+        save_badge_last_confirmed(self.script_dir, d, style, apply_badges=apply_badges)
+        self.callback('confirm', {'data': d, 'style': style, 'apply_badges': apply_badges})
         self.window.destroy()
 
     def on_batch(self):
+        apply_badges = self.apply_badges_var.get()
         d = self.get_current_badge_data()
         d.pop('_style', None)
         style = self.get_current_style()
-        self.callback('batch', {'data': d, 'style': style})
+        self.callback('batch', {'data': d, 'style': style, 'apply_badges': apply_badges})
         self.window.destroy()
 
     def on_skip(self):
@@ -2044,8 +2134,12 @@ class ImportProduse:
         action, payload = res.get('action'), res.get('data')
         if action == 'skip':
             return images_list
+        apply_badges = payload.get('apply_badges', True) if isinstance(payload, dict) else True
         badge_data = payload.get('data') if isinstance(payload, dict) else payload
         style = payload.get('style') if isinstance(payload, dict) else None
+        if not apply_badges:
+            self.log(f"   🏷️ Fără badge (opțiune debifată) – imagine neschimbată", "INFO")
+            return images_list
         if action == 'confirm' and badge_data:
             out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
             generate_badge_preview(first_path, badge_data, out_path, style=style)
@@ -2054,7 +2148,7 @@ class ImportProduse:
             else:
                 images_list[0] = out_path
             self.log(f"   🏷️ Badge confirmat pe prima imagine", "INFO")
-        elif action == 'batch' and badge_data:
+        elif action == 'batch' and badge_data and apply_badges:
             self.batch_badge_settings = {'model': badge_data.get('model'), 'data': badge_data, 'style': style}
             out_path = str(Path(first_path).with_suffix('')) + '_badge.webp'
             generate_badge_preview(first_path, badge_data, out_path, style=style)
