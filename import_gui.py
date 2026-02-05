@@ -1261,16 +1261,32 @@ class ImportProduse:
         self.extract_description_var = tk.BooleanVar(value=True)
         self.badge_preview_var = tk.BooleanVar(value=False)
         
+        # Text roșu de avertizare – vizibil doar când bifa de badge e activată
+        self._badge_warning_label = tk.Label(
+            frame_options,
+            text="⚠️ Mod badge-uri activ: la fiecare produs cu imagini se deschide fereastra de preview badge (poți confirma, modifica sau sări peste poză).",
+            fg='#c00',
+            wraplength=750,
+            font=('', 10),
+            justify=tk.LEFT
+        )
+        def _toggle_badge_warning(*args):
+            if self.badge_preview_var.get():
+                self._badge_warning_label.grid(row=0, column=0, columnspan=3, sticky='w', padx=5, pady=(0, 8))
+            else:
+                self._badge_warning_label.grid_remove()
+        self.badge_preview_var.trace_add('write', _toggle_badge_warning)
+        
         ttk.Checkbutton(frame_options, text="Descarcă toate imaginile produsului", 
-                       variable=self.download_images_var).grid(row=0, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.download_images_var).grid(row=1, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Optimizează imaginile (resize)", 
-                       variable=self.optimize_images_var).grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        ttk.Checkbutton(frame_options, text="Preview badge pe prima imagine (brand, model, 120Hz, IC, TT)", 
-                       variable=self.badge_preview_var).grid(row=2, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.optimize_images_var).grid(row=2, column=0, sticky='w', padx=5, pady=2)
+        ttk.Checkbutton(frame_options, text="Adaugă badge-uri pe produse (opțional – la fiecare produs parcurgi preview badge)", 
+                       variable=self.badge_preview_var, command=lambda: _toggle_badge_warning()).grid(row=3, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Convertește prețul EUR → RON", 
-                       variable=self.convert_price_var).grid(row=3, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.convert_price_var).grid(row=4, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Extrage descriere în română", 
-                       variable=self.extract_description_var).grid(row=4, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.extract_description_var).grid(row=5, column=0, sticky='w', padx=5, pady=2)
         
         # Progress
         frame_progress = ttk.Frame(parent)
