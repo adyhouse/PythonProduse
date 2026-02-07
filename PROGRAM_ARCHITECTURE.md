@@ -323,7 +323,34 @@ def build_longtail_title(self, product_name, description):
     """
 ```
 
-### **5️⃣ detect_warranty(product_name, category)**
+### **5️⃣ Categorii WooCommerce (WebGSM)** {#categorii-woocommerce-webgsm}
+
+Sistemul de categorii folosește două funcții complementare:
+
+**a) `get_webgsm_category(product_name, product_type='', description='')`**  
+Returnează **slug-ul** categoriei (ex: `ecrane-iphone`, `baterii-samsung`, `surubelnite`, `folii-protectie`). Folosit la export WebGSM (câmp `category_slug`). Analizează nume + descriere + tip; detectează brand (iPhone, Samsung, Huawei, Xiaomi, etc.) și tipul produsului; returnează doar slug-uri din arborele site-ului.
+
+**b) `get_woo_category(product_name, product_type='', manual_code=None, description='', url_slug='', tags='')`**  
+Returnează **path-ul** pentru coloana Categories din CSV (ex: `Piese > Piese iPhone > Ecrane`, `Unelte > Șurubelnițe`). Prioritate: cod manual din sku_list (link \| COD) → apoi detectare automată din titlu/URL/descriere/taguri.
+
+**Arbore categorii (slug-uri valide):**
+
+- **Piese** [piese] → Piese iPhone [piese-iphone]: ecrane-iphone, baterii-iphone, camere-iphone, carcase-iphone, difuzoare-iphone, flexuri-iphone, mufe-incarcare-iphone
+- Piese Samsung / Huawei / Xiaomi: același tip de slug-uri (ecrane-samsung, baterii-huawei, etc.)
+- **Unelte** [unelte]: surubelnite, pensete, statii-lipit, separatoare-ecrane, microscoape, programatoare, kituri-complete
+- **Accesorii** [accesorii]: huse-carcase, folii-protectie, cabluri-incarcatoare, adezivi-consumabile
+- **Dispozitive** [dispozitive]: telefoane-folosite, telefoane-refurbished, tablete, smartwatch
+- **Servicii** [servicii]: reparatii, training, buy-back
+
+**Slug-uri care NU EXISTĂ în site (nu se folosesc niciodată):**  
+`accesorii-service`, `accesorii-service-xiaomi`, `baterii-iphone-piese`, `camere-iphone-piese`, `ecrane-telefoane`, `baterii-telefoane`.
+
+**Coduri manuale (CATEGORY_CODE_MAP):**  
+Dacă în sku_list este `URL | COD` (ex: SCR, BAT, TOOL), categoria se ia din mapare; pentru Piese se completează brandul din titlu/descriere. Codurile: SCR, BAT, CAM, CHG, FLX, SPK, CAS, STC (Piese); TOOL, PENS, SOLD, SEP, MICRO, PROG, KIT, EQP (Unelte); HUSA, FOIL, CBL, CNS (Accesorii).
+
+---
+
+### **6️⃣ detect_warranty(product_name, category)**
 ```python
 def detect_warranty(self, product_name, category):
     """
@@ -362,7 +389,7 @@ def detect_warranty(self, product_name, category):
     """
 ```
 
-### **6️⃣ remove_diacritics(text)**
+### **7️⃣ remove_diacritics(text)**
 ```python
 def remove_diacritics(self, text):
     """
@@ -397,7 +424,7 @@ def remove_diacritics(self, text):
     """
 ```
 
-### **7️⃣ translate_text(text, source, target)**
+### **8️⃣ translate_text(text, source, target)**
 ```python
 def translate_text(self, text, source='en', target='ro'):
     """
@@ -436,7 +463,7 @@ def translate_text(self, text, source='en', target='ro'):
     """
 ```
 
-### **8️⃣ export_to_csv(products_data, filename)**
+### **9️⃣ export_to_csv(products_data, filename)**
 ```python
 def export_to_csv(self, products_data, filename):
     """
@@ -702,7 +729,16 @@ EXCHANGE_RATE=5.00  # Schimbă aici
 
 ---
 
-### **6. Modifica User-Agent pentru scraping**
+### **6. Modifică logica categorii (slug WebGSM)**
+**Fișier:** `import_gui.py`  
+**Funcție:** `get_webgsm_category()`  
+**Linia:** ~2018
+
+Returnează doar slug-uri din arborele site-ului (ex: `ecrane-iphone`, `surubelnite`). Pentru noi tipuri de produs sau cuvinte cheie, adaugă condiții în ordinea din doc (Piese → Unelte → Accesorii → Dispozitive). Nu folosi niciodată slug-urile interzise (vezi comentariul de lângă `CATEGORY_CODE_MAP`).
+
+---
+
+### **7. Modifica User-Agent pentru scraping**
 **Fișier:** `import_gui.py`  
 **Linia:** ~950 (in scrape_product)
 
@@ -723,7 +759,8 @@ product_data = {
     'description': str,             # Descriere
     'images': list,                 # Lista [img1.jpg, img2.jpg, ...]
     'sku': str,                     # SKU de la furnizor
-    'category_path': str,           # Categorie detectat
+    'category_path': str,           # Path categorie (ex: Piese > Piese iPhone > Ecrane)
+    'category_slug': str,           # Slug WebGSM (ex: ecrane-iphone) – unde e folosit
     'tags': list,                   # Tag-uri deduse
     'supplier_sku': str,            # SKU original furnizor
     'sku_generated': str,           # SKU generat (890...)
@@ -758,5 +795,6 @@ EXCHANGE_RATE=4.97
 ---
 
 **Creat:** 24.01.2026  
-**Versiune Program:** 3.0 - Long Tail SEO + SKU EAN-13  
+**Actualizat:** 01.02.2026 – Categorii WebGSM (slug-uri, get_webgsm_category, slug-uri interzise)  
+**Versiune Program:** 3.1  
 **Autor Documentație:** AI Assistant

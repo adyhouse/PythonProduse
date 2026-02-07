@@ -36,6 +36,8 @@ MAX_IMAGES_IN_CSV = 5
 
 # Coduri categorie manuale (sku_list: link | COD) – prioritate față de Ollama
 # Ierarhie: PIESE 3 niveluri (Piese > Piese {Brand} > Tip), UNELTE/ACCESORII 2 niveluri
+# Slug-uri categorii NU EXISTĂ în site – nu folosi: accesorii-service, accesorii-service-xiaomi,
+# baterii-iphone-piese, camere-iphone-piese, ecrane-telefoane, baterii-telefoane
 CATEGORY_CODE_MAP = {
     # PIESE (3 nivele)
     'SCR': {'cat': 'Ecrane', 'top': 'Piese', 'prefix': 'SCR'},
@@ -1545,11 +1547,13 @@ class ImportProduse:
         else:
             print("ℹ Fișierul .env nu există, folosim valori default")
         # Debug: arată dacă Ollama e configurat (pentru loguri pe Windows)
+        self._ollama_local_checked = None
+        self._ollama_local_url = None
         ollama_url = self.config.get('OLLAMA_URL', '')
         if ollama_url:
             print(f"✓ Ollama din .env: {ollama_url}")
         else:
-            print("ℹ OLLAMA_URL gol în .env – traducere doar prin Google Translate")
+            print("ℹ OLLAMA_URL gol în .env – se va încerca Ollama pe local (localhost:11434) dacă rulează")
         
     def save_config(self):
         """Salvează configurația în .env"""
@@ -2013,56 +2017,139 @@ class ImportProduse:
             'pa_tehnologie': tehnologie
         }
 
-    def get_webgsm_category(self, product_name, product_type=''):
+    def get_webgsm_category(self, product_name, product_type='', description=''):
         """
-        Returnează categoria WooCommerce cu slug corect.
-        Format: slug-categorie (ex: ecrane-iphone, baterii-samsung)
+        Determină slug-ul categoriei WooCommerce conform arborelui WebGSM.
+        Returnează doar slug-uri valide: ecrane-iphone, baterii-samsung, mufe-incarcare-iphone,
+        surubelnite, folii-protectie, etc. NU folosește: accesorii-service, ecrane-telefoane, baterii-iphone-piese.
         """
-        text = product_name.lower()
+        text = ((product_name or '') + ' ' + (description or '') + ' ' + (product_type or '')).lower()
 
-        # Detectare tip produs
-        tip = ''
-        if any(x in text for x in ['display', 'screen', 'lcd', 'oled', 'ecran', 'amoled']):
-            tip = 'ecrane'
-        elif any(x in text for x in ['battery', 'baterie', 'acumulator']):
-            tip = 'baterii'
-        elif any(x in text for x in ['camera', 'cameră', 'lens']):
-            tip = 'camere'
-        elif any(x in text for x in ['flex', 'cable', 'conector', 'connector', 'charging port', 'dock']):
-            tip = 'flex-uri'
-        elif any(x in text for x in ['housing', 'back glass', 'carcas', 'frame', 'back cover', 'rear glass']):
-            tip = 'carcase'
-        elif any(x in text for x in ['speaker', 'earpiece', 'difuzor', 'buzzer']):
-            tip = 'difuzoare'
-        elif any(x in text for x in ['button', 'buton', 'power button', 'volume']):
-            tip = 'butoane'
-        elif any(x in text for x in ['tempered glass', 'screen protector', 'folie']):
-            tip = 'folii-protectie'
-        elif any(x in text for x in ['charger', 'incarcator', 'adapter']):
-            tip = 'incarcatoare'
-        else:
-            tip = 'accesorii-service'
-
-        # Detectare brand telefon
-        brand = ''
-        if 'iphone' in text or 'ipad' in text:
+        # === DETECTARE BRAND ===
+        brand = None
+        if any(x in text for x in ['iphone', 'apple', 'ios']):
             brand = 'iphone'
-        elif 'galaxy' in text or 'samsung' in text:
+        elif any(x in text for x in ['samsung', 'galaxy']):
             brand = 'samsung'
-        elif 'huawei' in text or 'honor' in text:
+        elif any(x in text for x in ['huawei', 'honor', 'mate ', 'p30', 'p40', 'p50', 'p60']):
             brand = 'huawei'
-        elif 'xiaomi' in text or 'redmi' in text or 'poco' in text:
+        elif any(x in text for x in ['xiaomi', 'redmi', 'poco', 'mi ']):
             brand = 'xiaomi'
-        elif 'pixel' in text or 'google' in text:
+        elif any(x in text for x in ['pixel', 'google']):
             brand = 'google'
-        elif 'motorola' in text or 'moto ' in text:
-            brand = 'motorola'
-        elif 'oneplus' in text:
+        elif any(x in text for x in ['oneplus', 'one plus']):
             brand = 'oneplus'
 
-        if brand:
-            return f"{tip}-{brand}"
-        return tip
+        # === PIESE: Ecrane / Display ===
+        if any(x in text for x in ['ecran', 'display', 'lcd', 'oled', 'screen', 'touchscreen']):
+            if brand == 'iphone':
+                return 'ecrane-iphone'
+            if brand == 'samsung':
+                return 'ecrane-samsung'
+            if brand == 'huawei':
+                return 'ecrane-huawei'
+            if brand == 'xiaomi':
+                return 'ecrane-xiaomi'
+            return 'piese'
+
+        # === PIESE: Baterii ===
+        if any(x in text for x in ['baterie', 'battery', 'acumulator', 'accumulator']):
+            if brand == 'iphone':
+                return 'baterii-iphone'
+            if brand == 'samsung':
+                return 'baterii-samsung'
+            if brand == 'huawei':
+                return 'baterii-huawei'
+            if brand == 'xiaomi':
+                return 'baterii-xiaomi'
+            return 'piese'
+
+        # === PIESE: Camere ===
+        if any(x in text for x in ['camera', 'cameră', 'foto', 'lens', 'lentila']):
+            if brand == 'iphone':
+                return 'camere-iphone'
+            if brand == 'samsung':
+                return 'camere-samsung'
+            if brand == 'huawei':
+                return 'camere-huawei'
+            if brand == 'xiaomi':
+                return 'camere-xiaomi'
+            return 'piese'
+
+        # === PIESE: Mufe încărcare ===
+        if any(x in text for x in ['mufă', 'mufa', 'charging port', 'port încărcare', 'usb-c', 'lightning connector', 'dock connector']):
+            if brand == 'iphone':
+                return 'mufe-incarcare-iphone'
+            if brand == 'samsung':
+                return 'mufe-incarcare-samsung'
+            return 'piese'
+
+        # === PIESE: Flexuri ===
+        if any(x in text for x in ['flex', 'cablu flex', 'ribbon', 'flat cable']):
+            if brand == 'iphone':
+                return 'flexuri-iphone'
+            if brand == 'samsung':
+                return 'flexuri-samsung'
+            return 'piese'
+
+        # === PIESE: Carcase ===
+        if any(x in text for x in ['carcasă', 'carcasa', 'back cover', 'housing', 'back glass', 'capac spate']):
+            if brand == 'iphone':
+                return 'carcase-iphone'
+            return 'piese'
+
+        # === PIESE: Difuzoare ===
+        if any(x in text for x in ['difuzor', 'speaker', 'buzzer', 'earpiece', 'loud speaker']):
+            if brand == 'iphone':
+                return 'difuzoare-iphone'
+            return 'piese'
+
+        # === UNELTE ===
+        if any(x in text for x in ['șurubelniță', 'surubelnita', 'screwdriver', 'torx', 'pentalobe', 'phillips']):
+            return 'surubelnite'
+        if any(x in text for x in ['pensetă', 'penseta', 'tweezer', 'pincetă']):
+            return 'pensete'
+        if any(x in text for x in ['stație lipit', 'statie lipit', 'soldering station', 'hot air', 'pistol aer cald']):
+            return 'statii-lipit'
+        if any(x in text for x in ['separator', 'lcd separator', 'screen separator']):
+            return 'separatoare-ecrane'
+        if any(x in text for x in ['microscop', 'microscope', 'lupa', 'magnifier']):
+            return 'microscoape'
+        if any(x in text for x in ['programator', 'programmer', 'box', 'jc', 'qianli', 'i2c']):
+            return 'programatoare'
+        if any(x in text for x in ['kit', 'set complet', 'tool kit']):
+            return 'kituri-complete'
+
+        # === ACCESORII ===
+        if any(x in text for x in ['husă', 'husa', 'case', 'cover', 'protector']):
+            return 'huse-carcase'
+        if any(x in text for x in ['folie', 'screen protector', 'tempered glass', 'sticlă securizată']):
+            return 'folii-protectie'
+        if any(x in text for x in ['cablu', 'cable', 'încărcător', 'charger', 'adaptor', 'adapter']):
+            return 'cabluri-incarcatoare'
+        if any(x in text for x in ['adeziv', 'adhesive', 'b7000', 't7000', 'b8000', 'banda dublu adezivă', 'sticker']):
+            return 'adezivi-consumabile'
+
+        # === DISPOZITIVE ===
+        if any(x in text for x in ['telefon second', 'second hand', 'folosit', 'used phone']):
+            return 'telefoane-folosite'
+        if any(x in text for x in ['refurbished', 'recondiționat', 'renewed']):
+            return 'telefoane-refurbished'
+        if any(x in text for x in ['tabletă', 'tablet', 'ipad']):
+            return 'tablete'
+        if any(x in text for x in ['smartwatch', 'ceas smart', 'apple watch', 'galaxy watch']):
+            return 'smartwatch'
+
+        # === DEFAULT: brand cunoscut → piese-{brand}, altfel piese ===
+        if brand == 'iphone':
+            return 'piese-iphone'
+        if brand == 'samsung':
+            return 'piese-samsung'
+        if brand == 'huawei':
+            return 'piese-huawei'
+        if brand == 'xiaomi':
+            return 'piese-xiaomi'
+        return 'piese'
 
     def _detect_brand_for_category(self, name_lower):
         """Inferă brandul pentru ramura Piese (Piese > Piese {Brand} > ...). Prioritate: iPhone/Apple, Samsung/Galaxy, Huawei/Honor, Xiaomi/Redmi/Poco, OnePlus."""
@@ -4363,7 +4450,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
 
             # ===== WEBGSM: Extrage atribute, categorie slug, coduri, features =====
             attributes = self.extract_product_attributes(product_name, description, product_link or '')
-            category_slug = self.get_webgsm_category(product_name)
+            category_slug = self.get_webgsm_category(product_name, description=description)
             compat_codes = self.extract_compatibility_codes(description)
             screen_features = self.detect_screen_features(product_name, description)
 

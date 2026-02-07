@@ -63,9 +63,19 @@ EXCHANGE_RATE=4.97
 Coloane generate:
 - **ID, Type, SKU, EAN** - Info produs
 - **Name** - Titlu Long Tail SEO (fără diacritice)
-- **Price, Stock, Categories** - Vânzări
+- **Price, Stock, Categories** - Vânzări (path: ex. `Piese > Piese iPhone > Ecrane`)
 - **Images** - URL-uri imagini WordPress
 - **meta:_warranty_period** - Garanție detectată automat
+
+### Categorii WooCommerce (WebGSM)
+
+Categoriile respectă arborele site-ului:
+- **Piese** → Piese iPhone/Samsung/Huawei/Xiaomi → Ecrane, Baterii, Camere, Carcase, Difuzoare, Flexuri, Mufe Încărcare (slug-uri: `ecrane-iphone`, `baterii-samsung`, etc.)
+- **Unelte** → Șurubelnițe, Pensete, Stații Lipit, Separatoare Ecrane, Microscoape, Programatoare, Kituri Complete
+- **Accesorii** → Huse & Carcase, Folii Protecție, Cabluri & Încărcătoare, Adezivi & Consumabile
+- **Dispozitive** → Telefoane Folosite, Telefoane Refurbished, Tablete, Smartwatch
+
+La export se folosesc: **path** pentru coloana Categories (`get_woo_category`) și **slug** unde e cazul (`get_webgsm_category`). Slug-urile interzise (nu există în site) nu sunt folosite niciodată. Detalii în [PROGRAM_ARCHITECTURE.md](PROGRAM_ARCHITECTURE.md#categorii-woocommerce-webgsm).
 
 ## 💡 Exemplu
 
@@ -133,7 +143,8 @@ Program pentru uz personal/comercial. Asigură-te că ai permisiune să scrapezi
 ## 📅 Versiune
 
 **v3.0** - Long Tail SEO + SKU EAN-13 + Garanție automată  
-**Data:** 25.01.2026
+**v3.1** - Categorii WebGSM: slug-uri conforme arborelui, `get_webgsm_category` cu descriere, slug-uri interzise documentate  
+**Data:** 01.02.2026
 
 ---
 
