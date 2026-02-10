@@ -2670,30 +2670,20 @@ class ImportProduse:
                     product_data = self.scrape_product(url_or_sku)
 
                     if product_data:
-                        # Cod manual din sku_list (link | COD) are prioritate pentru categorie și prefix SKU
+                        # Cod manual din sku_list (link | COD) are prioritate pentru categorie
                         product_data['manual_category_code'] = manual_code
-                        sku_counter += 1
-                        brand_piesa = product_data.get('pa_brand_piesa', '')
-                        calitate = product_data.get('pa_calitate', '')
-                        webgsm_sku = self.generate_webgsm_sku(
-                            product_data.get('name', ''),
-                            brand_piesa,
-                            sku_counter,
-                            calitate=calitate,
-                            manual_code=manual_code
-                        )
 
-                        # Adaugă date suplimentare
-                        product_data['webgsm_sku'] = webgsm_sku
-                        # sku_furnizor e deja setat corect în scrape_product()
-                        # ean_real e deja setat corect în scrape_product()
+                        # NU mai generăm SKU intern de tip WG-...; folosim SKU furnizor ca identificator principal
+                        sku_furnizor = product_data.get('sku_furnizor', product_data.get('sku', ''))
+                        product_data['webgsm_sku'] = sku_furnizor
+                        # sku_furnizor și ean_real sunt setate în scrape_product()
 
                         # Preview badge pe prima imagine (opțional): confirmă/modifică/skip; originalul rămâne backup
                         if product_data.get('images') and self.badge_preview_var.get():
                             product_data['images'] = self.process_images_with_badges(product_data['images'], product_data)
 
                         success_count += 1
-                        self.log(f"✓ Produs procesat! SKU: {webgsm_sku}", "SUCCESS")
+                        self.log(f"✓ Produs procesat! SKU furnizor: {sku_furnizor}", "SUCCESS")
 
                         products_data.append(product_data)
                     else:
@@ -2727,7 +2717,7 @@ class ImportProduse:
             self.log(f"   📦 Total intrări: {len(sku_items)}", "INFO")
             self.log(f"   📁 Imagini salvate în: images/", "INFO")
             if products_data:
-                self.log(f"   🏷️ SKU-uri generate: WG-...-01 pana la WG-...-{sku_counter:02d}", "INFO")
+                self.log("   🏷️ SKU-uri utilizate: codurile furnizorului (ex. SKU MobileSentrix)", "INFO")
             self.log("=" * 70, "INFO")
 
             csv_info = f"\nFișier CSV: {csv_filename}" if csv_filename else ""
@@ -3448,8 +3438,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         else:
                             clean_desc_ro = '<p>' + html.escape(raw_fallback) + '</p>'
 
-                    # SKU: folosește WebGSM SKU generat (WG-ECR-IP13-JK-01)
-                    sku_value = product.get('webgsm_sku', product.get('sku', 'N/A'))
+                    # SKU: folosește SKU furnizor (MobileSentrix) – nu mai generăm coduri WG-... pentru produs
+                    sku_value = product.get('sku_furnizor', product.get('webgsm_sku', product.get('sku', '')))
 
                     # EAN/GTIN: cod numeric 12-14 cifre de la MobileSentrix (meta:gtin_ean)
                     ean_real = str(product.get('ean_real', '')).strip()
@@ -3511,6 +3501,9 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                             in_stock = '1'
                     except (ValueError, TypeError):
                         pass
+
+                    # Filtru: scoatem URL-urile directe MobileSentrix din CSV; păstrăm doar imaginile de pe WordPress
+                    image_urls = [u for u in image_urls if 'mobilesentrix.eu' not in u]
 
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
