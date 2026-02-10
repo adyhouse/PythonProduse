@@ -4583,10 +4583,30 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     'name': local_path.name
                 }
             else:
-                error_msg = response.text[:200] if response.text else f"Status {response.status_code}"
-                self.log(f"         ✗ Upload eșuat: {error_msg}", "WARNING")
+                error_msg = response.text[:300] if response.text else f"Status {response.status_code}"
+                self.log(f"         ✗ Upload eșuat HTTP {response.status_code}: {error_msg}", "WARNING")
+                # Retry o singură dată la erori de server sau timeout
+                if response.status_code >= 500 or response.status_code == 429:
+                    self.log(f"         🔄 Reîncerc upload: {local_path.name}...", "INFO")
+                    try:
+                        r2 = requests.post(
+                            media_url,
+                            data=file_data,
+                            headers=headers,
+                            auth=(wp_username, wp_app_password.replace(' ', '')),
+                            timeout=45
+                        )
+                        if r2.status_code in [200, 201]:
+                            md = r2.json()
+                            self.log(f"         ✓ ID={md.get('id')} (după retry)", "SUCCESS")
+                            return {'id': md.get('id'), 'src': md.get('source_url'), 'name': local_path.name}
+                    except Exception as e2:
+                        self.log(f"         ✗ Retry eșuat: {e2}", "WARNING")
                 return None
                 
+        except requests.exceptions.Timeout:
+            self.log(f"   ⚠️ Timeout la upload {local_path.name} (server lent sau fișier mare)", "WARNING")
+            return None
         except Exception as e:
             self.log(f"   ⚠️ Eroare upload imagine: {e}", "WARNING")
             return None
