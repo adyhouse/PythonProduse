@@ -1362,9 +1362,19 @@ class ImportProduse:
         ttk.Button(btn_frame, text="🔄 Reîncarcă Config", 
                   command=self.reload_config).pack(side='left', padx=5)
         
+        # Ollama (rețea) – verificare vizibilitate pentru scraper din VM
+        ollama_frame = ttk.LabelFrame(frame, text="🤖 Ollama (rețea)", padding=10)
+        ollama_frame.grid(row=5, column=0, columnspan=2, pady=10, sticky='ew')
+        ollama_url = self.config.get('OLLAMA_URL', '').strip() or 'http://localhost:11434'
+        ttk.Label(ollama_frame, text=f"URL: {ollama_url} (din .env)").pack(anchor='w')
+        ttk.Button(ollama_frame, text="🔍 Verifică Ollama pe rețea", 
+                  command=self.check_ollama_connection).pack(anchor='w', pady=5)
+        ttk.Label(ollama_frame, text="Dacă eșuează: pe PC-ul unde rulează Ollama, rulează start_ollama_network.bat (Windows) sau start_ollama_network.sh (Mac/Linux).", 
+                  font=('TkDefaultFont', 8), foreground='gray').pack(anchor='w')
+        
         # Info box
         info_frame = ttk.LabelFrame(frame, text="ℹ️ Informații", padding=10)
-        info_frame.grid(row=5, column=0, columnspan=2, pady=10, sticky='ew')
+        info_frame.grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')
         
         info_text = """
 📍 Cum obții API Keys:
@@ -2516,6 +2526,26 @@ class ImportProduse:
         except Exception as e:
             self.log(f"✗ Eroare conexiune: {e}", "ERROR")
             messagebox.showerror("Eroare", f"Nu s-a putut conecta la WooCommerce:\n{e}")
+
+    def check_ollama_connection(self):
+        """Verifică dacă Ollama răspunde pe rețea (pentru scraper din VM)."""
+        base_url = self.config.get('OLLAMA_URL', '').strip() or 'http://localhost:11434'
+        base_url = base_url.rstrip('/')
+        self.log(f"Verific Ollama la: {base_url}", "INFO")
+        try:
+            r = requests.get(f"{base_url}/api/tags", timeout=10)
+            if r.status_code == 200:
+                self.log(f"✓ Ollama vizibil la {base_url}", "SUCCESS")
+                messagebox.showinfo("Ollama", f"OK – Ollama răspunde la:\n{base_url}\n\nScraperul din VM poate folosi Ollama.")
+            else:
+                self.log(f"✗ Ollama a răspuns cu status {r.status_code}", "WARNING")
+                messagebox.showwarning("Ollama", f"Ollama a răspuns cu status {r.status_code}.\n\nPe PC-ul unde rulează Ollama, rulează:\n• Windows: start_ollama_network.bat\n• Mac/Linux: ./start_ollama_network.sh")
+        except requests.exceptions.Timeout:
+            self.log("✗ Timeout – Ollama nu răspunde (server lent sau inaccesibil)", "WARNING")
+            messagebox.showwarning("Ollama", "Timeout – Ollama nu răspunde pe rețea.\n\nPe PC-ul unde e instalat Ollama:\n1. Rulează start_ollama_network.bat (Win) sau start_ollama_network.sh (Mac/Linux)\n2. În .env pe VM pune OLLAMA_URL=http://IP_PC:11434")
+        except Exception as e:
+            self.log(f"✗ Ollama inaccesibil: {e}", "WARNING")
+            messagebox.showwarning("Ollama", f"Ollama inaccesibil:\n{e}\n\nPe PC-ul unde rulează Ollama, pornește-l vizibil pe rețea:\n• Windows: start_ollama_network.bat\n• Mac/Linux: ./start_ollama_network.sh\n\nApoi în .env (pe VM): OLLAMA_URL=http://IP_ACEL_PC:11434")
     
     def browse_sku_file(self):
         """Selectează fișier SKU"""
