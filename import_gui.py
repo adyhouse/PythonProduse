@@ -34,6 +34,16 @@ from deep_translator import GoogleTranslator
 # CSV conține doar link-uri către aceste imagini – limitarea reduce volumul per rând la import.
 MAX_IMAGES_IN_CSV = 5
 
+# Mapare categorie → Tip Produs (pentru Atribut 5 în CSV)
+CATEGORY_TO_TYPE = {
+    'Baterii': 'Baterie', 'Ecrane': 'Ecran', 'Difuzoare': 'Difuzor', 'Camere': 'Camera',
+    'Cabluri & Încărcătoare': 'Cablu/Încărcător', 'Mufe Încărcare': 'Conector',
+    'Flexuri': 'Flex', 'Carcase': 'Carcasă', 'Folii Protecție': 'Folie',
+    'Șurubelnițe': 'Unealtă', 'Pensete': 'Unealtă', 'Stații Lipit': 'Unealtă',
+    'Separatoare Ecrane': 'Unealtă', 'Microscoape': 'Unealtă', 'Programatoare': 'Unealtă',
+    'Kituri Complete': 'Unealtă', 'Huse & Carcase': 'Husă', 'Adezivi & Consumabile': 'Consumabil',
+}
+
 # Coduri categorie manuale (sku_list: link | COD) – prioritate față de Ollama
 # Ierarhie: PIESE 3 niveluri (Piese > Piese {Brand} > Tip), UNELTE/ACCESORII 2 niveluri
 # Slug-uri categorii NU EXISTĂ în site – nu folosi: accesorii-service, accesorii-service-xiaomi,
@@ -2017,6 +2027,25 @@ class ImportProduse:
             'pa_tehnologie': tehnologie
         }
 
+    def _guess_product_type(self, category_str):
+        """Ghicește tipul produsului din categorie (ex: Piese > Piese iPhone > Ecrane → Ecran)."""
+        if not category_str:
+            return ''
+        cat_lower = category_str.lower()
+        for cat_key, ptype in CATEGORY_TO_TYPE.items():
+            if cat_key.lower() in cat_lower:
+                return ptype
+        return ''
+
+    def _extract_real_brand(self, supplier_title):
+        """Extrage brandul real din titlul furnizorului (Ampsentrix, I2C, Wiha, etc.). NU calitatea (Premium OEM)."""
+        known_brands = ['Ampsentrix', 'I2C', 'Wiha', 'Qianli', 'JC', 'Luban', 'Relife', 'Sunshine', 'JK', 'ZY', 'GX', 'Hex', 'RJ', 'Foxconn', 'BOE', 'Tianma', 'iBridge', 'Mijia', 'Samsung', 'Apple', 'Xiaomi']
+        title_lower = (supplier_title or '').lower()
+        for b in known_brands:
+            if b.lower() in title_lower:
+                return b
+        return ''
+
     def get_webgsm_category(self, product_name, product_type='', description=''):
         """
         Determină slug-ul categoriei WooCommerce conform arborelui WebGSM.
@@ -3215,15 +3244,16 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
 
             with open(csv_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
                 fieldnames = [
-                    'ID', 'Type', 'SKU', 'Name', 'Published', 'Is featured?',
+                    'ID', 'Type', 'SKU', 'GTIN, UPC, EAN, or ISBN', 'Name', 'Published', 'Is featured?',
                     'Visibility in catalog', 'Short description', 'Description',
-                    'Tax status', 'Tax class', 'In stock?', 'Stock', 'Regular price',
-                    'Categories', 'Tags', 'Images', 'Parent',
-                    # ATRIBUTE WOOCOMMERCE (4 atribute x 4 coloane)
+                    'Tax status', 'Tax class', 'In stock?', 'Stock', 'Low stock amount', 'Backorders allowed?',
+                    'Regular price', 'Categories', 'Tags', 'Images', 'Parent', 'Allow customer reviews?',
+                    # ATRIBUTE WOOCOMMERCE (5 atribute x 4 coloane)
                     'Attribute 1 name', 'Attribute 1 value(s)', 'Attribute 1 visible', 'Attribute 1 global',
                     'Attribute 2 name', 'Attribute 2 value(s)', 'Attribute 2 visible', 'Attribute 2 global',
                     'Attribute 3 name', 'Attribute 3 value(s)', 'Attribute 3 visible', 'Attribute 3 global',
                     'Attribute 4 name', 'Attribute 4 value(s)', 'Attribute 4 visible', 'Attribute 4 global',
+                    'Attribute 5 name', 'Attribute 5 value(s)', 'Attribute 5 visible', 'Attribute 5 global',
                     # ACF META
                     'meta:gtin_ean', 'meta:sku_furnizor', 'meta:furnizor_activ',
                     'meta:pret_achizitie', 'meta:locatie_stoc', 'meta:garantie_luni',
@@ -3438,8 +3468,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         else:
                             clean_desc_ro = '<p>' + html.escape(raw_fallback) + '</p>'
 
-                    # SKU: folosește SKU furnizor (MobileSentrix) – nu mai generăm coduri WG-... pentru produs
-                    sku_value = product.get('sku_furnizor', product.get('webgsm_sku', product.get('sku', '')))
+                    # SKU: MEREU GOL – se generează în Supabase la import (100001, 100002, ...)
+                    sku_value = ''
 
                     # EAN/GTIN: cod numeric 12-14 cifre de la MobileSentrix (meta:gtin_ean)
                     ean_real = str(product.get('ean_real', '')).strip()
@@ -3464,8 +3494,12 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         if s:
                             ean_value = s
 
-                    # SKU furnizor: codul MobileSentrix (ex: 107182127516)
-                    sku_furnizor = product.get('sku_furnizor', product.get('sku', ''))
+                    # EAN/SKU ca TEXT (apostrof prefix) – evită corupția Excel: 107082128693 → 1.07E+11
+                    ean_text = f"'{ean_value}" if ean_value else ''
+
+                    # SKU furnizor: codul MobileSentrix (ex: 107182127516) – ca text
+                    sku_furnizor_raw = product.get('sku_furnizor', product.get('sku', ''))
+                    sku_furnizor = f"'{sku_furnizor_raw}" if sku_furnizor_raw else ''
 
                     # Categorii: Titlu > URL slug > Descriere > Taguri; folosit și pentru garanție
                     manual_code = product.get('manual_category_code')
@@ -3483,24 +3517,16 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     warranty_months = warranty_months.group(1) if warranty_months else '12'
                     self.log(f"   ⏱️ Garantie: {warranty_months} luni", "INFO")
 
-                    # Disponibilitate și stoc (din scrape: in_stock / preorder / out_of_stock)
+                    # Stoc MEREU 0 – nu avem stoc real (încă nu am comandat de la furnizor)
+                    in_stock = '0'
+                    stock_value = '0'
                     availability = product.get('availability', 'in_stock')
                     if availability == 'in_stock':
-                        in_stock = '1'
                         locatie_stoc = product.get('locatie_stoc', 'depozit_central')
                     elif availability == 'preorder':
-                        in_stock = '0'
                         locatie_stoc = 'precomanda'
                     else:
-                        in_stock = '0'
                         locatie_stoc = 'indisponibil'
-                    # Reparare stoc: dacă Stock > 0, In stock? = 1 (permite vânzarea)
-                    try:
-                        stock_val = product.get('stock', '100')
-                        if int(stock_val) > 0:
-                            in_stock = '1'
-                    except (ValueError, TypeError):
-                        pass
 
                     # Filtru: scoatem URL-urile directe MobileSentrix din CSV; păstrăm doar imaginile de pe WordPress
                     image_urls = [u for u in image_urls if 'mobilesentrix.eu' not in u]
@@ -3544,12 +3570,19 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                                 longtail_title, categories, pa_model, pa_calitate, pa_tehnologie, tip_ro
                             )
 
+                    # Brand REAL din furnizor (nu calitate: Premium OEM, Aftermarket etc.)
+                    brand_real = self._extract_real_brand(clean_name) or (
+                        pa_brand_piesa if pa_brand_piesa not in ('Premium OEM', 'Service Pack', 'Aftermarket', 'Aftermarket Plus') else ''
+                    )
+                    tip_produs = self._guess_product_type(categories)
+
                     row = {
                         'ID': '',
                         'Type': 'simple',
                         'SKU': sku_value,
+                        'GTIN, UPC, EAN, or ISBN': ean_text,
                         'Name': longtail_title,
-                        'Published': '0',  # Draft/Pending – utilizatorul publică manual după review
+                        'Published': '0',
                         'Is featured?': '0',
                         'Visibility in catalog': 'visible',
                         'Short description': short_description,
@@ -3557,34 +3590,42 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         'Tax status': 'taxable',
                         'Tax class': '',
                         'In stock?': in_stock,
-                        'Stock': product.get('stock', '100'),
+                        'Stock': stock_value,
+                        'Low stock amount': '3',
+                        'Backorders allowed?': 'notify' if locatie_stoc == 'precomanda' else '0',
                         'Regular price': f"{price_ron:.2f}",
                         'Categories': categories,
                         'Tags': tags_value,
                         'Images': all_images,
                         'Parent': '',
+                        'Allow customer reviews?': '1',
                         # ATRIBUT 1: Model Compatibil
                         'Attribute 1 name': 'Model Compatibil',
                         'Attribute 1 value(s)': pa_model,
                         'Attribute 1 visible': '1',
-                        'Attribute 1 global': '1',
+                        'Attribute 1 global': '0',
                         # ATRIBUT 2: Calitate
                         'Attribute 2 name': 'Calitate',
                         'Attribute 2 value(s)': pa_calitate,
                         'Attribute 2 visible': '1',
-                        'Attribute 2 global': '1',
-                        # ATRIBUT 3: Brand Piesa
+                        'Attribute 2 global': '0',
+                        # ATRIBUT 3: Brand Piesa (brand real, nu calitate)
                         'Attribute 3 name': 'Brand Piesa',
-                        'Attribute 3 value(s)': pa_brand_piesa,
+                        'Attribute 3 value(s)': brand_real,
                         'Attribute 3 visible': '1',
-                        'Attribute 3 global': '1',
-                        # ATRIBUT 4: Tehnologie
-                        'Attribute 4 name': 'Tehnologie',
-                        'Attribute 4 value(s)': pa_tehnologie,
+                        'Attribute 3 global': '0',
+                        # ATRIBUT 4: Tip Produs
+                        'Attribute 4 name': 'Tip Produs',
+                        'Attribute 4 value(s)': tip_produs,
                         'Attribute 4 visible': '1',
-                        'Attribute 4 global': '1',
-                        # ACF META
-                        'meta:gtin_ean': ean_value,
+                        'Attribute 4 global': '0',
+                        # ATRIBUT 5: Tehnologie
+                        'Attribute 5 name': 'Tehnologie',
+                        'Attribute 5 value(s)': pa_tehnologie,
+                        'Attribute 5 visible': '1',
+                        'Attribute 5 global': '0',
+                        # ACF META (EAN/sku_furnizor ca text cu apostrof)
+                        'meta:gtin_ean': ean_text,
                         'meta:sku_furnizor': sku_furnizor,
                         'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
                         'meta:pret_achizitie': f"{pret_achizitie_lei_cu_tva:.2f}",
