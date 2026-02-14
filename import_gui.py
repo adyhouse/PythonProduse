@@ -3524,12 +3524,12 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         if s:
                             ean_value = s
 
-                    # EAN/SKU ca TEXT (apostrof prefix) – evită corupția Excel: 107082128693 → 1.07E+11
-                    ean_text = f"'{ean_value}" if ean_value else ''
+                    # EAN / SKU furnizor – cifre fără apostrof (afișare corectă)
+                    ean_text = ean_value if ean_value else ''
 
-                    # SKU furnizor: codul MobileSentrix (ex: 107182127516) – ca text
+                    # SKU furnizor: codul MobileSentrix (ex: 107182127516)
                     sku_furnizor_raw = product.get('sku_furnizor', product.get('sku', ''))
-                    sku_furnizor = f"'{sku_furnizor_raw}" if sku_furnizor_raw else ''
+                    sku_furnizor = str(sku_furnizor_raw).strip() if sku_furnizor_raw else ''
 
                     # Categorii: Titlu > URL slug > Descriere > Taguri; folosit și pentru garanție
                     manual_code = product.get('manual_category_code')
@@ -3654,7 +3654,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         'Attribute 5 value(s)': pa_tehnologie,
                         'Attribute 5 visible': '1',
                         'Attribute 5 global': '0',
-                        # ACF META (EAN/sku_furnizor ca text cu apostrof)
+                        # ACF META (EAN / SKU furnizor – cifre)
                         'meta:gtin_ean': ean_text,
                         'meta:sku_furnizor': sku_furnizor,
                         'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
