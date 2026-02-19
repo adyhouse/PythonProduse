@@ -3658,7 +3658,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         'meta:gtin_ean': ean_text,
                         'meta:sku_furnizor': sku_furnizor,
                         'meta:furnizor_activ': product.get('furnizor_activ', 'mobilesentrix'),
-                        'meta:pret_achizitie': f"{pret_achizitie_lei_cu_tva:.2f}",
+                        'meta:pret_achizitie': f"{price_eur:.2f}",  # preț achiziție în EUR (de pe site furnizor)
                         'meta:locatie_stoc': locatie_stoc,
                         'meta:garantie_luni': warranty_months,
                         'meta:coduri_compatibilitate': product.get('coduri_compatibilitate', ''),
@@ -4624,12 +4624,16 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             # URL media upload endpoint
             media_url = f"{self.config['WOOCOMMERCE_URL']}/wp-json/wp/v2/media"
             
-            # WordPress Application Password (diferit de WooCommerce API keys!)
+            # Reîncarcă .env (dacă ai adăugat WP_APP_PASSWORD după pornire)
+            load_dotenv(self.env_file)
+            # WordPress Application Password – NU e același lucru cu WooCommerce Consumer Key/Secret!
             wp_username = os.getenv('WP_USERNAME', 'admin')
-            wp_app_password = os.getenv('WP_APP_PASSWORD', '')
+            wp_app_password = (os.getenv('WP_APP_PASSWORD') or '').strip()
             
             if not wp_app_password:
                 self.log(f"         ⚠️ WP_APP_PASSWORD lipsă din .env!", "WARNING")
+                self.log(f"         Adaugă în .env: WP_USERNAME=utilizator și WP_APP_PASSWORD=parola", "WARNING")
+                self.log(f"         Parola se ia din WordPress: Users → Profilul tău → Application Passwords → New", "WARNING")
                 return None
             
             # Încearcă upload cu Application Password
