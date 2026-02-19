@@ -121,16 +121,43 @@ class MpsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
-            img_selectors = selectors.get("images", [".product-image img", ".product-gallery img", "img.product-image"]) or ["img"]
+            img_selectors = selectors.get("images", [
+                ".product-image img", ".product-gallery img", "img.product-image",
+                ".product-main-image", ".gallery img", "[class*='product'] img",
+                "[class*='gallery'] img", "[class*='image'] img", ".main img", "img[src]"
+            ]) or ["img"]
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
+            def _normalize(u):
+                if not u or not u.strip():
+                    return None
+                u = u.strip().split()[0]  # srcset: "url 1x, url2 2x" -> take first
+                if not u.startswith("http"):
+                    u = base_url + u if u.startswith("/") else base_url + "/" + u
+                return u
+
+            seen = set()
             for sel in img_selectors:
                 for img in soup.select(sel):
-                    src = img.get("src") or img.get("data-src")
-                    if src and ("product" in src.lower() or "image" in src.lower() or "catalog" in src.lower()):
-                        if not src.startswith("http"):
-                            src = base_url + src if src.startswith("/") else base_url + "/" + src
-                        img_urls.append(src)
+                    for attr in ("src", "data-src", "data-lazy-src", "data-original"):
+                        src = img.get(attr)
+                        if src:
+                            src = _normalize(src)
+                            if src and src not in seen:
+                                src_lower = src.lower()
+                                if any(x in src_lower for x in ["logo", "icon", "pixel", "tracking", "avatar", "banner", "sprite"]):
+                                    continue
+                                if "mpsmobile" in src or "/media/" in src or "/images/" in src or "/img/" in src or any(ext in src_lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
+                                    seen.add(src)
+                                    img_urls.append(src)
+                                    break
+                    srcset = img.get("data-srcset") or img.get("srcset")
+                    if srcset:
+                        for part in srcset.split(","):
+                            u = _normalize(part)
+                            if u and u not in seen and ("mpsmobile" in u or "/media/" in u or ".jpg" in u or ".png" in u or ".webp" in u):
+                                seen.add(u)
+                                img_urls.append(u)
             img_urls = list(dict.fromkeys(img_urls))[:10]
 
         product_id = re.sub(r"[^a-zA-Z0-9_-]", "_", (sku_furnizor or product_url)[:50])
