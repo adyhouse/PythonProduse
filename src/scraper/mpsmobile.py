@@ -2,6 +2,7 @@
 Scraper MPS Mobile (mpsmobile.de). B2B, prețuri cu login.
 SKU/EAN din tabele (Art-Nr., GTIN). Preț 0 dacă nu e vizibil.
 """
+import json
 import re
 from typing import Dict, Optional
 
@@ -121,6 +122,24 @@ class MpsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
+            raw_html = str(soup) if hasattr(soup, "__str__") else ""
+            def _normalize(u):
+                if not u or not u.strip():
+                    return None
+                u = u.strip().split()[0]
+                if not u.startswith("http"):
+                    u = base_url + u if u.startswith("/") else base_url + "/" + u
+                return u
+
+            def _accept_url(src):
+                if not src or src in seen:
+                    return False
+                src_lower = src.lower()
+                if any(x in src_lower for x in ["logo", "icon", "pixel", "tracking", "avatar", "banner", "sprite"]):
+                    return False
+                return "mpsmobile" in src or "/media/" in src or "/images/" in src or "/img/" in src or any(ext in src_lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])
+
+            seen = set()
             img_selectors = selectors.get("images", [
                 ".product-image img", ".product-gallery img", "img.product-image",
                 ".product-main-image", ".gallery img", "[class*='product'] img",
@@ -128,37 +147,70 @@ class MpsmobileScraper(BaseScraper):
             ]) or ["img"]
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
-            def _normalize(u):
-                if not u or not u.strip():
-                    return None
-                u = u.strip().split()[0]  # srcset: "url 1x, url2 2x" -> take first
-                if not u.startswith("http"):
-                    u = base_url + u if u.startswith("/") else base_url + "/" + u
-                return u
-
-            seen = set()
             for sel in img_selectors:
                 for img in soup.select(sel):
                     for attr in ("src", "data-src", "data-lazy-src", "data-original"):
                         src = img.get(attr)
                         if src:
                             src = _normalize(src)
-                            if src and src not in seen:
-                                src_lower = src.lower()
-                                if any(x in src_lower for x in ["logo", "icon", "pixel", "tracking", "avatar", "banner", "sprite"]):
-                                    continue
-                                if "mpsmobile" in src or "/media/" in src or "/images/" in src or "/img/" in src or any(ext in src_lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
-                                    seen.add(src)
-                                    img_urls.append(src)
-                                    break
+                            if src and _accept_url(src):
+                                seen.add(src)
+                                img_urls.append(src)
+                                break
                     srcset = img.get("data-srcset") or img.get("srcset")
                     if srcset:
                         for part in srcset.split(","):
                             u = _normalize(part)
-                            if u and u not in seen and ("mpsmobile" in u or "/media/" in u or ".jpg" in u or ".png" in u or ".webp" in u):
+                            if u and _accept_url(u):
                                 seen.add(u)
                                 img_urls.append(u)
+
+            if not img_urls and raw_html:
+                for pattern in [
+                    r'https?://[^"\')\s]+mpsmobile[^"\')\s]*\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
+                    r'https?://[^"\')\s]+/(?:media|images|img)/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
+                    r'"(https?://[^"]+mpsmobile[^"]+)"',
+                    r'"(/(?:media|images|img)/[^"]+)"',
+                ]:
+                    for m in re.finditer(pattern, raw_html, re.I):
+                        u = m.group(1) if m.lastindex else m.group(0)
+                        u = _normalize(u)
+                        if u and _accept_url(u):
+                            seen.add(u)
+                            img_urls.append(u)
+                    if img_urls:
+                        break
+
+            for script in soup.select("script[type='application/ld+json']"):
+                try:
+                    data = json.loads(script.string or "{}")
+                    if isinstance(data, dict):
+                        for key in ("image", "photo", "thumbnailUrl"):
+                            val = data.get(key)
+                            if isinstance(val, str):
+                                u = _normalize(val)
+                                if u and _accept_url(u) and u not in seen:
+                                    seen.add(u)
+                                    img_urls.append(u)
+                            elif isinstance(val, list):
+                                for v in val[:10]:
+                                    if isinstance(v, str):
+                                        u = _normalize(v)
+                                        if u and _accept_url(u) and u not in seen:
+                                            seen.add(u)
+                                            img_urls.append(u)
+                except Exception:
+                    pass
+            for script in soup.select("script"):
+                txt = script.string or ""
+                for m in re.finditer(r'["\'](https?://[^"\']+mpsmobile[^"\']+\.(?:jpg|jpeg|png|webp|gif)[^"\']*)["\']', txt, re.I):
+                    u = _normalize(m.group(1))
+                    if u and _accept_url(u) and u not in seen:
+                        seen.add(u)
+                        img_urls.append(u)
+
             img_urls = list(dict.fromkeys(img_urls))[:10]
+            self.log(f"   🖼️ Imagini găsite: {len(img_urls)}", "INFO")
 
         product_id = re.sub(r"[^a-zA-Z0-9_-]", "_", (sku_furnizor or product_url)[:50])
         images_data = self._download_images(img_urls, product_id, self._headers()) if img_urls else []
