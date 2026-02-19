@@ -124,13 +124,34 @@ class MpsmobileScraper(BaseScraper):
         if not self.skip_images:
             self.log("   🖼️ Descarc imagini MARI...", "INFO")
             # Aceeași ordine și logică ca la MobileSentrix: og:image → JSON-LD → galerie → fallback
+            # Rădăcina site-ului fără limbă (imagini sunt mereu la /data/product/images/)
+            site_root = "https://mpsmobile.de"
+
             def _normalize(u):
                 if not u or not u.strip():
                     return None
                 u = u.strip().split()[0]
                 if not u.startswith("http"):
-                    u = base_url + u if u.startswith("/") else base_url + "/" + u
+                    u = site_root + u if u.startswith("/") else site_root + "/" + u
                 return u
+
+            def _canonical_mps_image_url(url):
+                """Forțează URL imagine MPS la formă canonică: mpsmobile.de/data/product/images/...
+                Elimină /en/, /de/ și path-uri greșite (ex: .../en/data/images/product/images/)."""
+                if not url:
+                    return url
+                # Path corect: extrage data/product/images/... și rebuild
+                for marker in ("data/product/images/", "product/images/"):
+                    if marker in url:
+                        idx = url.find(marker)
+                        suffix = url[idx + len(marker):].split("?")[0].strip()
+                        if suffix and ".." not in suffix:
+                            return site_root + "/data/product/images/" + suffix
+                # Doar UUID.ext în URL – presupunem detail/normal
+                match = re.search(r"([0-9A-Fa-f-]{36}\.(?:jpg|jpeg|png|webp|gif))", url)
+                if match:
+                    return site_root + "/data/product/images/detail/normal/" + match.group(1)
+                return url
 
             def _is_icon_or_logo(url):
                 """Exclude icoane, logo-uri (ca la MobileSentrix)."""
@@ -149,15 +170,20 @@ class MpsmobileScraper(BaseScraper):
 
             seen = set()
 
+            def _add(u):
+                u = _canonical_mps_image_url(u) if u else None
+                if u and u not in seen and _is_image_url(u):
+                    seen.add(u)
+                    img_urls.append(u)
+
             # 1. og:image (meta tags – imaginea principală, ca la MobileSentrix)
             og_images = soup.find_all("meta", property="og:image")
             for og_img in og_images:
                 content = og_img.get("content")
                 if content:
                     u = _normalize(content)
-                    if u and u not in seen and not _is_icon_or_logo(u):
-                        seen.add(u)
-                        img_urls.append(u)
+                    if u and not _is_icon_or_logo(u):
+                        _add(u)
             if og_images and any(og.get("content") for og in og_images):
                 self.log("      ✓ Găsită imagine în og:image", "INFO")
 
@@ -172,13 +198,10 @@ class MpsmobileScraper(BaseScraper):
                             images = [images]
                         elif not isinstance(images, list):
                             continue
-                        for img in images[:10]:
+                        for img in images[:5]:
                             url = img.get("url", img) if isinstance(img, dict) else img
                             if isinstance(url, str):
-                                u = _normalize(url)
-                                if u and u not in seen and _is_image_url(u):
-                                    seen.add(u)
-                                    img_urls.append(u)
+                                _add(_normalize(url))
                         if images:
                             self.log(f"      ✓ Găsite {len(images) if isinstance(images, list) else 1} imagini în JSON-LD", "INFO")
                 except Exception:
@@ -193,37 +216,45 @@ class MpsmobileScraper(BaseScraper):
                     for attr in ("src", "data-src", "data-lazy-src", "data-original"):
                         src = img.get(attr)
                         if src:
-                            u = _normalize(src)
-                            if u and u not in seen and _is_image_url(u):
-                                seen.add(u)
-                                img_urls.append(u)
-                                break
+                            _add(_normalize(src))
+                            break
                     srcset = img.get("data-srcset") or img.get("srcset")
                     if srcset:
                         for part in srcset.split(","):
-                            u = _normalize(part)
-                            if u and u not in seen and _is_image_url(u):
-                                seen.add(u)
-                                img_urls.append(u)
+                            _add(_normalize(part))
 
-            # 4. Fallback: URL-uri MPS pentru imagini produs (ex: /data/product/images/detail/normal/xxx.jpg)
+            # 4. Fallback: doar în zona produsului, max 3 imagini (evită imagini de la alte produse)
             n_before_fallback = len(img_urls)
-            raw_html = str(soup)
+            product_container = (
+                soup.select_one("main") or soup.select_one("[class*='product-detail']")
+                or soup.select_one(".product") or soup.select_one("#product")
+                or soup.select_one("[class*='product-info']")
+            )
+            raw_html = str(product_container) if product_container else str(soup)
+            max_from_fallback = 3
+            fallback_count = 0
             for pattern in [
                 r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
                 r'"(https?://[^"]*mpsmobile\.de/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
                 r'"(/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
             ]:
+                if fallback_count >= max_from_fallback:
+                    break
                 for m in re.finditer(pattern, raw_html, re.I):
+                    if fallback_count >= max_from_fallback:
+                        break
                     u = m.group(1) if m.lastindex else m.group(0)
                     u = _normalize(u)
                     if u and u not in seen and _is_image_url(u):
-                        seen.add(u)
-                        img_urls.append(u)
+                        n_before = len(img_urls)
+                        _add(u)
+                        if len(img_urls) > n_before:
+                            fallback_count += 1
             if len(img_urls) > n_before_fallback:
                 self.log("      ✓ Imagini din path /data/product/images/", "INFO")
 
-            img_urls = list(dict.fromkeys(img_urls))[:10]
+            # Max 5 imagini per produs (evită duplicate + imagini de la alte produse)
+            img_urls = list(dict.fromkeys(img_urls))[:5]
             if img_urls:
                 self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
             else:
