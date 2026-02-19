@@ -29,6 +29,10 @@ import html
 import uuid
 import time
 from deep_translator import GoogleTranslator
+try:
+    from woocommerce import API
+except ImportError:
+    API = None
 
 # Max imagini per produs în CSV. Imagini sunt deja uploadate de script pe WordPress;
 # CSV conține doar link-uri către aceste imagini – limitarea reduce volumul per rând la import.
@@ -1418,6 +1422,9 @@ class ImportProduse:
     def cleanup_orphans(self):
         """Curăță produse orfane din WooCommerce (înainte de import)"""
         try:
+            if API is None:
+                self.log("✗ Pachetul woocommerce nu e instalat. Rulează: pip install woocommerce", "ERROR")
+                return
             self.log("=" * 70, "INFO")
             self.log("🧹 CURĂȚARE ORFANE - Găsire și ștergere produse incomplete", "INFO")
             self.log("=" * 70, "INFO")
@@ -2501,20 +2508,28 @@ class ImportProduse:
 
     def test_connection(self):
         """Testează conexiunea la WooCommerce"""
+        if API is None:
+            self.log("✗ Pachetul woocommerce nu e instalat. Rulează: pip install woocommerce", "ERROR")
+            messagebox.showerror("Eroare", "Pachetul woocommerce nu e instalat.\nRulează în terminal: pip install woocommerce")
+            return
         try:
             self.log("Testez conexiunea la WooCommerce...", "INFO")
-            
+            load_dotenv(self.env_file)
+            url = (self.wc_url_var.get() or os.getenv("WOOCOMMERCE_URL", "") or "").strip().rstrip("/")
+            key = (self.wc_key_var.get() or os.getenv("WOOCOMMERCE_CONSUMER_KEY", "") or "").strip()
+            secret = (self.wc_secret_var.get() or os.getenv("WOOCOMMERCE_CONSUMER_SECRET", "") or "").strip()
+            if not url or not key or not secret:
+                self.log("✗ Lipsesc URL, Consumer Key sau Consumer Secret (din ecran sau .env)", "ERROR")
+                messagebox.showerror("Eroare", "Completează URL WooCommerce, Consumer Key și Consumer Secret\nîn tab Configurare sau în fișierul .env")
+                return
             wcapi = API(
-                url=self.wc_url_var.get(),
-                consumer_key=self.wc_key_var.get(),
-                consumer_secret=self.wc_secret_var.get(),
+                url=url,
+                consumer_key=key,
+                consumer_secret=secret,
                 version="wc/v3",
                 timeout=30
             )
-            
-            # Test request
             response = wcapi.get("products", params={"per_page": 1})
-            
             if response.status_code == 200:
                 self.log("✓ Conexiune reușită la WooCommerce!", "SUCCESS")
                 messagebox.showinfo("Succes", "Conexiunea la WooCommerce este funcțională!")
@@ -2522,7 +2537,6 @@ class ImportProduse:
             else:
                 self.log(f"✗ Eroare conexiune: Status {response.status_code}", "ERROR")
                 messagebox.showerror("Eroare", f"Status Code: {response.status_code}\n{response.text}")
-                
         except Exception as e:
             self.log(f"✗ Eroare conexiune: {e}", "ERROR")
             messagebox.showerror("Eroare", f"Nu s-a putut conecta la WooCommerce:\n{e}")
@@ -4624,16 +4638,19 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             # URL media upload endpoint
             media_url = f"{self.config['WOOCOMMERCE_URL']}/wp-json/wp/v2/media"
             
-            # Reîncarcă .env (dacă ai adăugat WP_APP_PASSWORD după pornire)
+            # Reîncarcă .env
             load_dotenv(self.env_file)
-            # WordPress Application Password – NU e același lucru cu WooCommerce Consumer Key/Secret!
-            wp_username = os.getenv('WP_USERNAME', 'admin')
+            wp_username = (os.getenv('WP_USERNAME') or '').strip() or 'admin'
             wp_app_password = (os.getenv('WP_APP_PASSWORD') or '').strip()
-            
+            # Dacă nu ai Application Password, încearcă cu cheile WooCommerce (funcționează pe unele site-uri)
             if not wp_app_password:
-                self.log(f"         ⚠️ WP_APP_PASSWORD lipsă din .env!", "WARNING")
-                self.log(f"         Adaugă în .env: WP_USERNAME=utilizator și WP_APP_PASSWORD=parola", "WARNING")
-                self.log(f"         Parola se ia din WordPress: Users → Profilul tău → Application Passwords → New", "WARNING")
+                wc_key = (os.getenv('WOOCOMMERCE_CONSUMER_KEY') or self.config.get('WOOCOMMERCE_CONSUMER_KEY') or '').strip()
+                wc_secret = (os.getenv('WOOCOMMERCE_CONSUMER_SECRET') or self.config.get('WOOCOMMERCE_CONSUMER_SECRET') or '').strip()
+                if wc_key and wc_secret:
+                    wp_username = wc_key
+                    wp_app_password = wc_secret
+            if not wp_app_password:
+                self.log(f"         ⚠️ Pentru upload imagini adaugă în .env: WP_USERNAME și WP_APP_PASSWORD (sau folosește cheile WooCommerce)", "WARNING")
                 return None
             
             # Încearcă upload cu Application Password
