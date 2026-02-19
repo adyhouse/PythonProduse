@@ -205,6 +205,24 @@ class MpsmobileScraper(BaseScraper):
                             if u and u not in seen and _is_image_url(u):
                                 seen.add(u)
                                 img_urls.append(u)
+
+            # 4. Fallback: URL-uri MPS pentru imagini produs (ex: /data/product/images/detail/normal/xxx.jpg)
+            n_before_fallback = len(img_urls)
+            raw_html = str(soup)
+            for pattern in [
+                r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
+                r'"(https?://[^"]*mpsmobile\.de/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
+                r'"(/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
+            ]:
+                for m in re.finditer(pattern, raw_html, re.I):
+                    u = m.group(1) if m.lastindex else m.group(0)
+                    u = _normalize(u)
+                    if u and u not in seen and _is_image_url(u):
+                        seen.add(u)
+                        img_urls.append(u)
+            if len(img_urls) > n_before_fallback:
+                self.log("      ✓ Imagini din path /data/product/images/", "INFO")
+
             img_urls = list(dict.fromkeys(img_urls))[:10]
             if img_urls:
                 self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
