@@ -122,7 +122,6 @@ class MpsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
-            raw_html = str(soup) if hasattr(soup, "__str__") else ""
             def _normalize(u):
                 if not u or not u.strip():
                     return None
@@ -131,20 +130,64 @@ class MpsmobileScraper(BaseScraper):
                     u = base_url + u if u.startswith("/") else base_url + "/" + u
                 return u
 
-            def _accept_url(src):
-                if not src or src in seen:
+            def _is_icon_or_logo(url):
+                """Exclude icoane, logo-uri, sprite-uri (ca la MobileSentrix)."""
+                u = url.lower()
+                return any(x in u for x in [
+                    "logo", "icon", "pixel", "tracking", "avatar", "banner", "sprite",
+                    "favicon", "placeholder", "/icons/", "/logo/", "/static/", "/assets/"
+                ])
+
+            def _is_product_image_url(url):
+                """Doar URL-uri care arată a imagine produs (path specific galerie/produs)."""
+                if _is_icon_or_logo(url):
                     return False
-                src_lower = src.lower()
-                if any(x in src_lower for x in ["logo", "icon", "pixel", "tracking", "avatar", "banner", "sprite"]):
+                u = url.lower()
+                if not any(ext in u for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
                     return False
-                return "mpsmobile" in src or "/media/" in src or "/images/" in src or "/img/" in src or any(ext in src_lower for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])
+                # Path trebuie să fie specific produs: /media/, /product/, /produkt/, /artikel/, /catalog/
+                return any(p in u for p in [
+                    "/media/", "/product/", "/produkt/", "/artikel/", "/catalog/",
+                    "mpsmobile.de/media/", "mpsmobile.de/product/"
+                ])
 
             seen = set()
-            img_selectors = selectors.get("images", [
-                ".product-image img", ".product-gallery img", "img.product-image",
-                ".product-main-image", ".gallery img", "[class*='product'] img",
-                "[class*='gallery'] img", "[class*='image'] img", ".main img", "img[src]"
-            ]) or ["img"]
+
+            # 1. og:image (imaginea principală produs – ca la MobileSentrix)
+            for meta in soup.find_all("meta", property="og:image"):
+                content = meta.get("content")
+                if content:
+                    u = _normalize(content)
+                    if u and u not in seen and not _is_icon_or_logo(u):
+                        seen.add(u)
+                        img_urls.append(u)
+            if img_urls:
+                self.log("      ✓ Imagine din og:image", "INFO")
+
+            # 2. JSON-LD – doar cheia "image" (date structurate produs)
+            for script in soup.select("script[type='application/ld+json']"):
+                try:
+                    data = json.loads(script.string or "{}")
+                    if isinstance(data, dict) and "image" in data:
+                        images = data["image"]
+                        if isinstance(images, str):
+                            images = [images]
+                        elif not isinstance(images, list):
+                            continue
+                        for img in images[:10]:
+                            url = img.get("url", img) if isinstance(img, dict) else img
+                            if isinstance(url, str):
+                                u = _normalize(url)
+                                if u and u not in seen and _is_product_image_url(u):
+                                    seen.add(u)
+                                    img_urls.append(u)
+                        if images:
+                            self.log(f"      ✓ Imagini din JSON-LD: {len(images)}", "INFO")
+                except Exception:
+                    pass
+
+            # 3. Doar imagini din zona de galerie produs (selectori stricti – ca MobileSentrix)
+            img_selectors = selectors.get("images", [".product-image img", ".product-gallery img"])
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
             for sel in img_selectors:
@@ -152,62 +195,18 @@ class MpsmobileScraper(BaseScraper):
                     for attr in ("src", "data-src", "data-lazy-src", "data-original"):
                         src = img.get(attr)
                         if src:
-                            src = _normalize(src)
-                            if src and _accept_url(src):
-                                seen.add(src)
-                                img_urls.append(src)
+                            u = _normalize(src)
+                            if u and u not in seen and _is_product_image_url(u):
+                                seen.add(u)
+                                img_urls.append(u)
                                 break
                     srcset = img.get("data-srcset") or img.get("srcset")
                     if srcset:
                         for part in srcset.split(","):
                             u = _normalize(part)
-                            if u and _accept_url(u):
+                            if u and u not in seen and _is_product_image_url(u):
                                 seen.add(u)
                                 img_urls.append(u)
-
-            if not img_urls and raw_html:
-                for pattern in [
-                    r'https?://[^"\')\s]+mpsmobile[^"\')\s]*\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
-                    r'https?://[^"\')\s]+/(?:media|images|img)/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
-                    r'"(https?://[^"]+mpsmobile[^"]+)"',
-                    r'"(/(?:media|images|img)/[^"]+)"',
-                ]:
-                    for m in re.finditer(pattern, raw_html, re.I):
-                        u = m.group(1) if m.lastindex else m.group(0)
-                        u = _normalize(u)
-                        if u and _accept_url(u):
-                            seen.add(u)
-                            img_urls.append(u)
-                    if img_urls:
-                        break
-
-            for script in soup.select("script[type='application/ld+json']"):
-                try:
-                    data = json.loads(script.string or "{}")
-                    if isinstance(data, dict):
-                        for key in ("image", "photo", "thumbnailUrl"):
-                            val = data.get(key)
-                            if isinstance(val, str):
-                                u = _normalize(val)
-                                if u and _accept_url(u) and u not in seen:
-                                    seen.add(u)
-                                    img_urls.append(u)
-                            elif isinstance(val, list):
-                                for v in val[:10]:
-                                    if isinstance(v, str):
-                                        u = _normalize(v)
-                                        if u and _accept_url(u) and u not in seen:
-                                            seen.add(u)
-                                            img_urls.append(u)
-                except Exception:
-                    pass
-            for script in soup.select("script"):
-                txt = script.string or ""
-                for m in re.finditer(r'["\'](https?://[^"\']+mpsmobile[^"\']+\.(?:jpg|jpeg|png|webp|gif)[^"\']*)["\']', txt, re.I):
-                    u = _normalize(m.group(1))
-                    if u and _accept_url(u) and u not in seen:
-                        seen.add(u)
-                        img_urls.append(u)
 
             img_urls = list(dict.fromkeys(img_urls))[:10]
             self.log(f"   🖼️ Imagini găsite: {len(img_urls)}", "INFO")
