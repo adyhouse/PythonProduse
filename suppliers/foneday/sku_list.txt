@@ -1,0 +1,4 @@
+# Listă SKU/URL Foneday.shop – un SKU sau URL per linie
+# Exemplu:
+# FDX-IPH14-DISPLAY
+# sau URL produs (după ce este cunoscut formatul)

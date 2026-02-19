@@ -1,0 +1,24 @@
+{
+  "name": "componentidigitali",
+  "display_name": "Componenti Digitali",
+  "base_url": "https://www.componentidigitali.com",
+  "default_language": "it",
+  "supported_languages": ["it", "en"],
+  "search_url_template": "{base_url}/{lang}/shop?search={sku}",
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8"
+  },
+  "selectors": {
+    "name": ["h2", "h3", ".product-title", "h1.page-title"],
+    "price": [".price", ".price-wrapper .price"],
+    "description": [".product-description", ".description"],
+    "images": [".product-image img", ".product-media img"],
+    "sku_regex": "Item no\\.:\\s*(\\d+)|Cod\\. Art\\.:\\s*(\\d+)",
+    "availability": [".availability"]
+  },
+  "skip_images": false,
+  "login": { "required": false },
+  "sku_list_file": "suppliers/componentidigitali/sku_list.txt",
+  "enabled": true
+}

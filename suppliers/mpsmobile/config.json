@@ -1,0 +1,30 @@
+{
+  "name": "mpsmobile",
+  "display_name": "MPS Mobile",
+  "base_url": "https://mpsmobile.de",
+  "default_language": "de",
+  "supported_languages": ["de", "es"],
+  "search_url_template": "{base_url}/{lang}/all-categories-c-0/search/{sku}",
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept-Language": "de-DE,de;q=0.9"
+  },
+  "selectors": {
+    "name": ["h1", ".product-title"],
+    "price": [".price", ".product-price"],
+    "description": [".product-description", ".tab-content"],
+    "images": [".product-image img", ".product-gallery img"],
+    "sku_table_header": "Art-Nr.",
+    "ean_table_header": "GTIN:",
+    "brand_table_header": "Hersteller"
+  },
+  "skip_images": false,
+  "login": {
+    "required": true,
+    "url": "{base_url}/{lang}/customer/login",
+    "username": "USERNAME_FROM_ENV",
+    "password": "PASSWORD_FROM_ENV"
+  },
+  "sku_list_file": "suppliers/mpsmobile/sku_list.txt",
+  "enabled": true
+}

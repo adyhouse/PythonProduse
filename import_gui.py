@@ -34,6 +34,17 @@ try:
 except ImportError:
     API = None
 
+try:
+    from src.scraper.factory import ScraperFactory
+except ImportError:
+    try:
+        _script_root = Path(__file__).resolve().parent
+        if str(_script_root) not in sys.path:
+            sys.path.insert(0, str(_script_root))
+        from src.scraper.factory import ScraperFactory
+    except ImportError:
+        ScraperFactory = None
+
 # Max imagini per produs în CSV. Imagini sunt deja uploadate de script pe WordPress;
 # CSV conține doar link-uri către aceste imagini – limitarea reduce volumul per rând la import.
 MAX_IMAGES_IN_CSV = 5
@@ -1251,6 +1262,39 @@ class ImportProduse:
         """Setup tab Import"""
         
         # Frame SKU/LINK
+        # Furnizor (multi-supplier)
+        self.supplier_var = tk.StringVar(value="MobileSentrix.eu")
+        self._suppliers_list = []  # [{"name": "mobilesentrix", "display_name": "MobileSentrix.eu"}, ...]
+        if ScraperFactory:
+            self._suppliers_list = ScraperFactory.list_available_suppliers()
+            if self._suppliers_list:
+                default = next((s["display_name"] for s in self._suppliers_list if s["name"] == "mobilesentrix"), self._suppliers_list[0]["display_name"])
+                self.supplier_var.set(default)
+        frame_supplier = ttk.LabelFrame(parent, text="Furnizor", padding=10)
+        frame_supplier.pack(fill='x', padx=10, pady=10)
+        ttk.Label(frame_supplier, text="Furnizor:").grid(row=0, column=0, sticky='w', padx=5)
+        supplier_combo = ttk.Combobox(
+            frame_supplier, textvariable=self.supplier_var,
+            values=[s["display_name"] for s in self._suppliers_list],
+            state="readonly", width=40
+        )
+        supplier_combo.grid(row=0, column=1, sticky='w', padx=5)
+        if self._suppliers_list:
+            idx = next((i for i, s in enumerate(self._suppliers_list) if s["display_name"] == self.supplier_var.get()), 0)
+            supplier_combo.current(idx)
+
+        def _on_supplier_change(*args):
+            if not ScraperFactory or not self._suppliers_list:
+                return
+            display = self.supplier_var.get()
+            supp = next((s for s in self._suppliers_list if s["display_name"] == display), None)
+            if supp:
+                path = ScraperFactory.get_sku_list_path(supp["name"])
+                if path and path.exists():
+                    self.sku_file_var.set(str(path))
+
+        self.supplier_var.trace_add("write", _on_supplier_change)
+
         frame_sku = ttk.LabelFrame(parent, text="Selectează fișier cu link-uri sau EAN-uri", padding=10)
         frame_sku.pack(fill='x', padx=10, pady=10)
         
@@ -1262,6 +1306,10 @@ class ImportProduse:
         info_label.pack(anchor='w')
         
         self.sku_file_var = tk.StringVar(value="sku_list.txt")
+        if ScraperFactory and self._suppliers_list:
+            first_path = ScraperFactory.get_sku_list_path(self._suppliers_list[0]["name"])
+            if first_path and first_path.exists():
+                self.sku_file_var.set(str(first_path))
         
         ttk.Label(frame_sku, text="Fișier:").grid(row=1, column=0, sticky='w', padx=5)
         ttk.Entry(frame_sku, textvariable=self.sku_file_var, width=50).grid(row=1, column=1, padx=5)
@@ -1326,8 +1374,15 @@ class ImportProduse:
                                     command=self.stop_import, state='disabled')
         self.btn_stop.pack(side='left', padx=5)
         
-        ttk.Button(frame_buttons, text="📄 Deschide sku_list.txt", 
-                  command=lambda: os.startfile("sku_list.txt")).pack(side='right', padx=5)
+        def _open_sku_file():
+            path = getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get()
+            if path and Path(path).exists():
+                os.startfile(path)
+            elif self.sku_file_var.get():
+                messagebox.showwarning("Fișier", f"Fișierul nu există:\n{path}")
+
+        ttk.Button(frame_buttons, text="📄 Deschide lista SKU", 
+                  command=_open_sku_file).pack(side='right', padx=5)
         
     def setup_config_tab(self, parent):
         """Setup tab Configurare"""
@@ -2713,8 +2768,24 @@ class ImportProduse:
             self.log(f"🚀 START PROCESARE PRODUSE (Mod: CSV WebGSM + Upload Imagini)", "INFO")
             self.log("=" * 70, "INFO")
 
+            # Furnizor selectat și config
+            supplier_display = self.supplier_var.get() if hasattr(self, 'supplier_var') else "MobileSentrix.eu"
+            supplier_name = "mobilesentrix"
+            if hasattr(self, '_suppliers_list') and self._suppliers_list:
+                supp = next((s for s in self._suppliers_list if s["display_name"] == supplier_display), None)
+                if supp:
+                    supplier_name = supp["name"]
+            supplier_config = ScraperFactory.load_supplier_config(supplier_name) if ScraperFactory else None
+            if not supplier_config:
+                supplier_config = {}
+            scraper = ScraperFactory.get_scraper(supplier_name, self) if ScraperFactory else None
+            self.log(f"📦 Furnizor: {supplier_display} ({supplier_name})", "INFO")
+            if supplier_config.get("skip_images"):
+                self.log("   ⚠️ Imagini oprite pentru acest furnizor (watermark)", "INFO")
+
             # Citește SKU-uri (listă dict: url, code opțional din "link | COD")
-            sku_items = self.read_sku_file(getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get())
+            sku_file_path = getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get()
+            sku_items = self.read_sku_file(sku_file_path)
             self.log(f"📋 Găsite {len(sku_items)} intrări pentru procesare", "INFO")
 
             success_count = 0
@@ -2739,8 +2810,15 @@ class ImportProduse:
                 self.log(f"="*70, "INFO")
 
                 try:
-                    # Scraping produs de pe MobileSentrix
-                    product_data = self.scrape_product(url_or_sku)
+                    # Scraping: prin scraper (multi-furnizor) sau direct MobileSentrix
+                    if scraper:
+                        product_data = scraper.scrape_product(url_or_sku)
+                    else:
+                        product_data = self.scrape_product(
+                            url_or_sku,
+                            skip_images=supplier_config.get("skip_images", False),
+                            supplier_name=supplier_config.get("name", "mobilesentrix"),
+                        )
 
                     if product_data:
                         # Cod manual din sku_list (link | COD) are prioritate pentru categorie
@@ -3699,21 +3777,24 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
             return None
     
-    def scrape_product(self, ean):
+    def scrape_product(self, ean, skip_images=False, supplier_name='mobilesentrix'):
         """Extrage date produs de pe MobileSentrix și descarcă imagini local
-        Acceptă: EAN, SKU sau LINK DIRECT la produs"""
+        Acceptă: EAN, SKU sau LINK DIRECT la produs.
+        skip_images: dacă True (ex.: furnizor cu watermark), nu descarcă imagini.
+        supplier_name: folosit pentru meta:furnizor_activ în CSV."""
         try:
             import re  # ⬅️ IMPORTANT: Import la ÎNCEPUTUL funcției!
             
             product_link = None
             product_id = ean  # Va fi folosit pentru nume fișiere
             
+            base_url = 'https://www.mobilesentrix.eu'
             # Headers pentru toate request-urile
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'ro-RO,ro;q=0.9,en;q=0.8',
-                'Referer': 'https://www.mobilesentrix.eu/'
+                'Referer': f'{base_url}/'
             }
             
             # PASUL 1: Detectează dacă input-ul e link direct
@@ -3738,7 +3819,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 # E SKU/EAN - MobileSentrix acceptă SKU în URL direct!
                 # Caută produsul pe baza SKU în pagina de căutare
                 search_sku = ean.strip()
-                search_url = f"https://www.mobilesentrix.eu/catalogsearch/result/?q={search_sku}"
+                search_url = f"{base_url}/catalogsearch/result/?q={search_sku}"
                 self.log(f"   🔍 Căutare produs cu SKU: {search_sku}", "INFO")
                 
                 response = requests.get(search_url, headers=headers, timeout=30)
@@ -3775,7 +3856,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 product_soup = BeautifulSoup(response.content, 'html.parser')
             else:
                 # E text generic EAN/SKU - trebuie să căutam
-                
+                search_url = f"{base_url}/catalogsearch/result/?q={ean.strip()}"
                 response = requests.get(search_url, headers=headers, timeout=30)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.content, 'html.parser')
@@ -4067,10 +4148,10 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             if not description:
                 description = f"Produs {product_name}"
             
-            # Extrage imagini
+            # Extrage imagini (sărim dacă furnizorul are watermark – skip_images=True)
             images_data = []
             
-            if self.download_images_var.get():
+            if self.download_images_var.get() and not skip_images:
                 self.log(f"   🖼️ Descarc imagini MARI...", "INFO")
                 
                 # 🎯 CAUTĂ IMAGINILE ÎN META TAGS + GALERIE COMPLETĂ
@@ -4567,7 +4648,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 'coduri_compatibilitate': compat_codes,
                 'ic_movable': screen_features['ic_movable'],
                 'truetone_support': screen_features['truetone_support'],
-                'furnizor_activ': 'mobilesentrix',
+                'furnizor_activ': supplier_name,
                 'pret_achizitie_eur': price,
                 'availability': availability,
                 'locatie_stoc': locatie_stoc,

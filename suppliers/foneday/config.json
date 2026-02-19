@@ -1,0 +1,21 @@
+{
+  "name": "foneday",
+  "display_name": "Foneday.shop",
+  "base_url": "https://foneday.shop",
+  "search_url_template": "{base_url}/catalog",
+  "api": {
+    "price_info": "https://foneday.shop/webshop/quick-search/fetch-article-price-info",
+    "stock_info": "https://foneday.shop/webshop/quick-search/fetch-article-stock-info"
+  },
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://foneday.shop/"
+  },
+  "selectors": {},
+  "skip_images": false,
+  "login": { "required": false },
+  "sku_list_file": "suppliers/foneday/sku_list.txt",
+  "enabled": true
+}

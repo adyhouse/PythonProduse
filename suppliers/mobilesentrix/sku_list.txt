@@ -1,0 +1,6 @@
+# Listă SKU/URL MobileSentrix – un URL sau EAN per linie
+# Opțional: URL | COD (ex: BAT, SCR) pentru categorie manuală
+# Exemplu:
+# https://www.mobilesentrix.eu/lcd-assembly-for-iphone-15-aftermarket-aq7-incell
+# 107082130502
+# 107082130426 | BAT

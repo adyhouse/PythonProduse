@@ -1,0 +1,23 @@
+{
+  "name": "mobilesentrix",
+  "display_name": "MobileSentrix.eu",
+  "base_url": "https://www.mobilesentrix.eu",
+  "search_url_template": "{base_url}/catalogsearch/result/?q={sku}",
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "ro-RO,ro;q=0.9,en;q=0.8",
+    "Referer": "https://www.mobilesentrix.eu/"
+  },
+  "selectors": {
+    "name": [".page-title span", "h1.page-title", "h1[itemprop=\"name\"]", ".product-name", "h1"],
+    "price": [".price-wrapper .price", ".product-info-price .price", "span[data-price-type=\"finalPrice\"]"],
+    "description": [".product.attribute.description", ".product-info-description"],
+    "images": [".product.media img", ".fotorama__img"],
+    "product_id": "var magicToolboxProductId"
+  },
+  "skip_images": false,
+  "login": { "required": false },
+  "sku_list_file": "suppliers/mobilesentrix/sku_list.txt",
+  "enabled": true
+}

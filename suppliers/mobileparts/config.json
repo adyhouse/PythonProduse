@@ -1,0 +1,21 @@
+{
+  "name": "mobileparts",
+  "display_name": "MobileParts.shop",
+  "base_url": "https://mobileparts.shop",
+  "search_url_template": "{base_url}/search?q={sku}",
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://mobileparts.shop/"
+  },
+  "selectors": {
+    "name": ["h1.product-title", ".product-name", "h1[itemprop=\"name\"]"],
+    "price": [".price", ".product-price", "span.price"],
+    "description": [".product-description", ".description"],
+    "images": [".product-images img", ".product-gallery img"],
+    "sku": [".sku", ".product-sku", "[itemprop=\"sku\"]"]
+  },
+  "skip_images": false,
+  "login": { "required": false },
+  "sku_list_file": "suppliers/mobileparts/sku_list.txt",
+  "enabled": true
+}

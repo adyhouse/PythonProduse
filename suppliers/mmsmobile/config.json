@@ -1,0 +1,30 @@
+{
+  "name": "mmsmobile",
+  "display_name": "MMS Mobile",
+  "base_url": "https://www.mmsmobile.de",
+  "default_language": "en",
+  "supported_languages": ["en", "de"],
+  "search_url_template": "{base_url}/{lang}/shop?search={sku}",
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept-Language": "en-US,en;q=0.9,de;q=0.8"
+  },
+  "selectors": {
+    "name": ["h1"],
+    "price": ["h4", ".price"],
+    "description": ["section[aria-labelledby*=\"description\"]", ".tab-content"],
+    "images": ["img[src*=\"/web/image/product.template/\"]"],
+    "sku_table_header": "SKU",
+    "ean_table_header": "EAN",
+    "brand_table_header": "Brand"
+  },
+  "skip_images": false,
+  "login": {
+    "required": true,
+    "url": "{base_url}/web/login",
+    "username": "USERNAME_FROM_ENV",
+    "password": "PASSWORD_FROM_ENV"
+  },
+  "sku_list_file": "suppliers/mmsmobile/sku_list.txt",
+  "enabled": true
+}
