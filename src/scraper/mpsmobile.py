@@ -121,12 +121,16 @@ class MpsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
-            for img in soup.select(selectors.get("images", [".product-image img", ".product-gallery img", "img.product-image"]) or ["img"]):
-                src = img.get("src") or img.get("data-src")
-                if src and ("product" in src.lower() or "image" in src.lower() or "catalog" in src.lower()):
-                    if not src.startswith("http"):
-                        src = base_url + src if src.startswith("/") else base_url + "/" + src
-                    img_urls.append(src)
+            img_selectors = selectors.get("images", [".product-image img", ".product-gallery img", "img.product-image"]) or ["img"]
+            if isinstance(img_selectors, str):
+                img_selectors = [img_selectors]
+            for sel in img_selectors:
+                for img in soup.select(sel):
+                    src = img.get("src") or img.get("data-src")
+                    if src and ("product" in src.lower() or "image" in src.lower() or "catalog" in src.lower()):
+                        if not src.startswith("http"):
+                            src = base_url + src if src.startswith("/") else base_url + "/" + src
+                        img_urls.append(src)
             img_urls = list(dict.fromkeys(img_urls))[:10]
 
         product_id = re.sub(r"[^a-zA-Z0-9_-]", "_", (sku_furnizor or product_url)[:50])
