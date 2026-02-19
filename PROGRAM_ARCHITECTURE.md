@@ -1,5 +1,7 @@
 # 📋 ARHITECTURA PROGRAM IMPORT PRODUSE - Documentație Tehnică Detaliată
 
+> **Context actual:** pentru **logica curentă**, regulile CSV (SKU gol, stoc 0, EAN, meta:pret_achizitie EUR, atribute, etc.) și **indexul fișierelor** din repo, vezi **[REPO_OVERVIEW.md](REPO_OVERVIEW.md)**. Acest document descrie arhitectura și funcțiile din cod.
+
 ## 📌 OVERVIEW - Ce face programul?
 
 Program pentru **export automizat de produse din MobileSentrix** către **CSV compatible cu WooCommerce**, cu:

@@ -1,13 +1,12 @@
-# 📱 Program Import Produse - MobileSentrix → CSV WooCommerce
+# 📱 Program Import Produse - MobileSentrix → CSV WooCommerce / Supabase
 
-Program automat pentru export și procesare produse din MobileSentrix cu:
-- Web scraping intelligent
-- Download imagini + upload pe WordPress
-- Traducere automată în română (fără diacritice)
-- Titluri Long Tail SEO optimizate
-- Generare coduri de bare (SKU EAN-13)
-- Detectare automată a garanțiilor
-- Export direct în CSV format WooCommerce
+Program pentru **scraping produse de pe MobileSentrix** și **export CSV** gata de import în **Supabase** / WooCommerce:
+- Web scraping (URL-uri sau EAN/SKU din `sku_list.txt`)
+- Download imagini + upload pe WordPress (Media)
+- Traducere în română (Google Translate sau Ollama)
+- Titluri Long Tail SEO, categorii WebGSM, atribute (Model, Calitate, Brand, Tip Produs, Tehnologie)
+- **CSV:** SKU gol (generat în Supabase), stoc 0, preț achiziție în EUR, EAN/SKU furnizor
+- Detectare garanție, optional Ollama pe rețea
 
 ## ✨ Caracteristici
 
@@ -44,28 +43,34 @@ python import_gui.py
 
 ## 📚 Documentație
 
-- [PROGRAM_ARCHITECTURE.md](PROGRAM_ARCHITECTURE.md) - Arhitectură tech detaliată
-- [GHID_RAPID_CSV.txt](GHID_RAPID_CSV.txt) - Ghid rapid de folosire
-- [README_EXTRACTOARE.txt](README_EXTRACTOARE.txt) - Info extractoare
+- **[REPO_OVERVIEW.md](REPO_OVERVIEW.md)** – **Citează acest fișier** pentru context complet: ce face scriptul, logica CSV, modificări recente, index al tuturor fișierelor .txt/.md și ce se poate modifica.
+- [PROGRAM_ARCHITECTURE.md](PROGRAM_ARCHITECTURE.md) – Arhitectură tehnică, flux, funcții, categorii WebGSM
+- [GHID_RAPID_CSV.txt](GHID_RAPID_CSV.txt) – Ghid rapid export CSV
+- [README_EXTRACTOARE.txt](README_EXTRACTOARE.txt) – Info extractoare
 
 ## 🔧 Configurare
 
-Editează `.env`:
+Editează `.env` (vezi `.env.example`):
 ```
 WOOCOMMERCE_URL=https://site-tau.com
 WOOCOMMERCE_CONSUMER_KEY=ck_...
 WOOCOMMERCE_CONSUMER_SECRET=cs_...
 EXCHANGE_RATE=4.97
+# Upload imagini (utilizator WP real + Application Password, NU Consumer Key):
+WP_USERNAME=admin
+WP_APP_PASSWORD=xxxx xxxx xxxx xxxx
+# Opțional – Ollama pe rețea:
+OLLAMA_URL=http://IP_OLLAMA:11434
 ```
 
 ## 📊 Format CSV Output
 
-Coloane generate:
-- **ID, Type, SKU, EAN** - Info produs
-- **Name** - Titlu Long Tail SEO (fără diacritice)
-- **Price, Stock, Categories** - Vânzări (path: ex. `Piese > Piese iPhone > Ecrane`)
-- **Images** - URL-uri imagini WordPress
-- **meta:_warranty_period** - Garanție detectată automat
+- **SKU:** gol (generat în Supabase la import)
+- **GTIN, UPC, EAN or ISBN** + **meta:gtin_ean** / **meta:sku_furnizor** – EAN/SKU furnizor (cifre)
+- **Stock:** 0; **meta:pret_achizitie:** preț în **EUR** (furnizor)
+- **Categories** – path (ex. `Piese > Piese iPhone > Ecrane`); **Images** – doar URL-uri WordPress
+- **Atribute 1–5:** Model, Calitate, Brand (real), Tip Produs, Tehnologie; toate **global=0**
+- Detalii complete: [REPO_OVERVIEW.md](REPO_OVERVIEW.md)
 
 ### Categorii WooCommerce (WebGSM)
 
@@ -142,9 +147,7 @@ Program pentru uz personal/comercial. Asigură-te că ai permisiune să scrapezi
 
 ## 📅 Versiune
 
-**v3.0** - Long Tail SEO + SKU EAN-13 + Garanție automată  
-**v3.1** - Categorii WebGSM: slug-uri conforme arborelui, `get_webgsm_category` cu descriere, slug-uri interzise documentate  
-**Data:** 01.02.2026
+**v3.1+** – CSV pentru Supabase: SKU gol, stoc 0, EAN fără apostrof, meta:pret_achizitie EUR, brand real, Atribut 4 Tip Produs / 5 Tehnologie, global=0, coloane noi; upload imagini cu WP_USERNAME/WP_APP_PASSWORD; Test Conexiune cu import woocommerce API; verificare Ollama pe rețea. Documentație: [REPO_OVERVIEW.md](REPO_OVERVIEW.md).
 
 ---
 
