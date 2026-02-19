@@ -4638,19 +4638,12 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             # URL media upload endpoint
             media_url = f"{self.config['WOOCOMMERCE_URL']}/wp-json/wp/v2/media"
             
-            # Reîncarcă .env
+            # Reîncarcă .env – pentru upload trebuie utilizator WP real + Application Password (NU cheile WooCommerce)
             load_dotenv(self.env_file)
             wp_username = (os.getenv('WP_USERNAME') or '').strip() or 'admin'
             wp_app_password = (os.getenv('WP_APP_PASSWORD') or '').strip()
-            # Dacă nu ai Application Password, încearcă cu cheile WooCommerce (funcționează pe unele site-uri)
             if not wp_app_password:
-                wc_key = (os.getenv('WOOCOMMERCE_CONSUMER_KEY') or self.config.get('WOOCOMMERCE_CONSUMER_KEY') or '').strip()
-                wc_secret = (os.getenv('WOOCOMMERCE_CONSUMER_SECRET') or self.config.get('WOOCOMMERCE_CONSUMER_SECRET') or '').strip()
-                if wc_key and wc_secret:
-                    wp_username = wc_key
-                    wp_app_password = wc_secret
-            if not wp_app_password:
-                self.log(f"         ⚠️ Pentru upload imagini adaugă în .env: WP_USERNAME și WP_APP_PASSWORD (sau folosește cheile WooCommerce)", "WARNING")
+                self.log(f"         ⚠️ Adaugă în .env: WP_USERNAME și WP_APP_PASSWORD (parolă din Users → Profil → Application Passwords)", "WARNING")
                 return None
             
             # Încearcă upload cu Application Password
@@ -4677,6 +4670,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             else:
                 error_msg = response.text[:300] if response.text else f"Status {response.status_code}"
                 self.log(f"         ✗ Upload eșuat HTTP {response.status_code}: {error_msg}", "WARNING")
+                if response.status_code == 401:
+                    self.log(f"         → 401: Folosește în .env utilizatorul WordPress real (ex: admin) la WP_USERNAME și parola de aplicație la WP_APP_PASSWORD (NU Consumer Key/Secret).", "WARNING")
                 # Retry o singură dată la erori de server sau timeout
                 if response.status_code >= 500 or response.status_code == 429:
                     self.log(f"         🔄 Reîncerc upload: {local_path.name}...", "INFO")
