@@ -260,13 +260,46 @@ class MobilepartsScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
-            for sel in selectors.get("images", [".product-images img", ".product-gallery img", ".product-image img", "img[alt*='product']"]):
+            seen = set()
+            def add_img_url(src):
+                if not src or "logo" in src.lower() or "icon" in src.lower() or "pixel" in src.lower():
+                    return
+                if not src.startswith("http"):
+                    src = base_url + src if src.startswith("/") else base_url + "/" + src
+                if src not in seen and (".jpg" in src.lower() or ".jpeg" in src.lower() or ".png" in src.lower() or ".webp" in src.lower() or "image" in src.lower()):
+                    seen.add(src)
+                    img_urls.append(src)
+
+            for sel in selectors.get("images", [
+                ".product-images img", ".product-gallery img", ".product-image img",
+                "[class*='product'] img", "[class*='article'] img", "[class*='gallery'] img",
+                "main img", ".article img", "img[alt*='product']", "img[alt*='Battery']", "img[alt*='Apple']"
+            ]):
                 for img in soup.select(sel):
-                    src = img.get("src") or img.get("data-src")
-                    if src:
-                        if not src.startswith("http"):
-                            src = base_url + src if src.startswith("/") else base_url + "/" + src
-                        img_urls.append(src)
+                    for attr in ("src", "data-src", "data-lazy-src", "data-srcset"):
+                        val = img.get(attr)
+                        if not val:
+                            continue
+                        if attr == "data-srcset":
+                            for part in val.split(","):
+                                part = part.strip().split()[0]
+                                add_img_url(part)
+                        else:
+                            add_img_url(val)
+
+            if not img_urls:
+                for img in soup.select("img"):
+                    src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                    if src and ("article" in (img.get("class") or []) or "product" in str(img.get("class") or "").lower() or not any(skip in (img.get("src") or "") for skip in ("logo", "icon", "avatar", "banner", "trusted"))):
+                        add_img_url(src)
+
+            if not img_urls:
+                raw = str(soup)
+                for m in re.finditer(r'["\'](https?://[^"\']*mobileparts\.shop[^"\']*\.(?:jpg|jpeg|png|webp|gif)[^"\']*)["\']', raw, re.I):
+                    add_img_url(m.group(1))
+                for m in re.finditer(r'["\'](/[^"\']*\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\']*)?)["\']', raw, re.I):
+                    add_img_url(m.group(1))
+
             img_urls = list(dict.fromkeys(img_urls))[:10]
 
         product_id = re.sub(r"[^a-zA-Z0-9_-]", "_", (sku_furnizor or product_url)[:50])
