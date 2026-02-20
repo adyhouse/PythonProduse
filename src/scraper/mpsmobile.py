@@ -246,11 +246,17 @@ class MpsmobileScraper(BaseScraper):
                         for part in srcset.split(","):
                             _add(_normalize(part))
 
-            # 4. Fallback: caută /data/product/images/ în tot HTML (inclusiv scripturi – galeria e adesea în JS)
-            # Limităm la 4 URL-uri ca să luăm imaginile produsului (primele din pagină), nu de la alte produse
+            # 4. Fallback: doar în zona produsului (evită imaginile de la "produse similare")
+            # Max 2 adiționale din fallback → total max 3 imagini (1 og:image + 2 galerie)
             n_before_fallback = len(img_urls)
-            raw_html = str(soup)
-            max_from_fallback = 4
+            product_block = (
+                soup.select_one("main") or soup.select_one("[class*='product-detail']")
+                or soup.select_one(".product-detail") or soup.select_one("#product-detail")
+                or soup.select_one("[class*='product-content']") or soup.select_one("article.product")
+                or soup.select_one(".product") or soup.select_one("#product")
+            )
+            raw_html = str(product_block) if product_block else ""
+            max_from_fallback = 2
             fallback_count = 0
             for pattern in [
                 r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
@@ -273,8 +279,8 @@ class MpsmobileScraper(BaseScraper):
             if len(img_urls) > n_before_fallback:
                 self.log("      ✓ Imagini din path /data/product/images/", "INFO")
 
-            # Max 5 imagini per produs (evită duplicate + imagini de la alte produse)
-            img_urls = list(dict.fromkeys(img_urls))[:5]
+            # MPS: max 3 imagini per produs (1 principală + max 2 din galeria produsului)
+            img_urls = list(dict.fromkeys(img_urls))[:3]
             if img_urls:
                 self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
             else:
