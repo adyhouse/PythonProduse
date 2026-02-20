@@ -3,6 +3,7 @@ Scraper MobileParts.shop.
 Selectori din config. Căutare / link direct.
 """
 import re
+import time
 from typing import Dict, List, Optional
 
 import requests
@@ -12,15 +13,31 @@ from .base import BaseScraper
 
 
 class MobilepartsScraper(BaseScraper):
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self, referer: Optional[str] = None, minimal: bool = False) -> Dict[str, str]:
         base = self.config.get("base_url", "https://mobileparts.shop").rstrip("/")
+        if not base.startswith("http"):
+            base = "https://" + base.replace("https://", "").replace("http://", "")
+        ua = self.config.get("headers", {}).get(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        )
+        ref = referer or (base + "/")
+        if minimal:
+            return {
+                "User-Agent": ua,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": ref,
+            }
         return {
-            "User-Agent": self.config.get("headers", {}).get(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            ),
+            "User-Agent": ua,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer": base + "/",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate",
+            "Referer": ref,
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
         }
 
     def _find_product_url(self, sku_or_query: str) -> Optional[str]:
@@ -59,15 +76,44 @@ class MobilepartsScraper(BaseScraper):
                 self.log("   ✗ Nu s-a găsit niciun produs.", "ERROR")
                 return None
 
+        # Session + homepage apoi produs; la 403 încercăm header-e minime
+        parsed = urlparse(product_url)
+        site_root = f"{parsed.scheme}://{parsed.netloc}"
+        session = requests.Session()
+        session.headers.update(self._headers(referer=site_root + "/"))
         try:
-            r = requests.get(product_url, headers=self._headers(), timeout=30)
-            r.raise_for_status()
-            soup = BeautifulSoup(r.content, "html.parser")
-            page_text = soup.get_text(separator="\n")
-            # Salvează HTML pentru debugging
-            self._save_debug_html(soup, product_url)
-        except Exception as e:
-            self.log(f"   ✗ Eroare descărcare: {e}", "ERROR")
+            session.get(site_root + "/", timeout=15)
+            time.sleep(1)
+        except Exception:
+            pass
+        last_error = None
+        for use_minimal in (False, True):
+            try:
+                h = self._headers(referer=site_root + "/", minimal=use_minimal)
+                r = session.get(product_url, headers=h, timeout=30, allow_redirects=True)
+                if r.status_code == 403 and not use_minimal:
+                    self.log("   ⚠️ 403 – reîncerc cu header-e minime...", "INFO")
+                    continue
+                r.raise_for_status()
+                soup = BeautifulSoup(r.content, "html.parser")
+                page_text = soup.get_text(separator="\n")
+                self._save_debug_html(soup, product_url)
+                last_error = None
+                break
+            except requests.HTTPError as e:
+                last_error = e
+                if e.response.status_code == 403:
+                    if not use_minimal:
+                        continue
+                else:
+                    raise
+            except Exception as e:
+                last_error = e
+                if not use_minimal:
+                    continue
+                raise
+        if last_error is not None:
+            self.log(f"   ✗ Eroare descărcare: {last_error}", "ERROR")
             return None
 
         selectors = self.config.get("selectors", {})

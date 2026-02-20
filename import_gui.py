@@ -3748,8 +3748,15 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         image_urls = image_urls[:MAX_IMAGES_IN_CSV]
                         self.log(f"   📷 CSV: max {MAX_IMAGES_IN_CSV} imagini/produs (import mai rapid)", "INFO")
 
+                    # Preț achiziție EUR (din scrape) – la fel ca la MobileSentrix; toți furnizorii populează price/pret_achizitie_eur
+                    _p = product.get('pret_achizitie_eur')
+                    if _p is None or _p == '':
+                        _p = product.get('price')
+                    try:
+                        price_eur = float(_p) if _p not in (None, '') else 0.0
+                    except (TypeError, ValueError):
+                        price_eur = 0.0
                     # Calculează preț vânzare RON: achiziție EUR → RON → adaos 40% → TVA 19%
-                    price_eur = product['price']
                     # Preț achiziție în LEI cu TVA: EUR × 5.1 (curs) × 1.21 (TVA achiziție 21%)
                     curs_achizitie = 5.1
                     tva_achizitie = 1.21
@@ -3831,12 +3838,14 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         if s:
                             ean_value = s
 
-                    # EAN / SKU furnizor – cifre fără apostrof (afișare corectă)
-                    ean_text = ean_value if ean_value else ''
+                    # EAN / SKU – apostrof în față ca în export WebGSM (Excel păstrează cifrele ca text, fără formatare)
+                    ean_text = ("'" + ean_value) if (ean_value and ean_value.isdigit()) else (ean_value or '')
 
-                    # SKU furnizor: codul MobileSentrix (ex: 107182127516)
+                    # SKU furnizor: cod furnizor (ex. 107082130502) – același format cu apostrof
                     sku_furnizor_raw = product.get('sku_furnizor', product.get('sku', ''))
                     sku_furnizor = str(sku_furnizor_raw).strip() if sku_furnizor_raw else ''
+                    if sku_furnizor and re.sub(r'\D', '', sku_furnizor) == sku_furnizor and len(sku_furnizor) >= 8:
+                        sku_furnizor = "'" + sku_furnizor
 
                     # Categorii: Titlu > URL slug > Descriere > Taguri; folosit și pentru garanție
                     manual_code = product.get('manual_category_code')
