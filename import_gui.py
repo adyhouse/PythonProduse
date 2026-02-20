@@ -2823,15 +2823,19 @@ class ImportProduse:
 
         ImageSelectionWindow(self.root, images_list, product_name, on_done, self._script_dir)
 
-    def process_image_selection(self, images_list, product_data):
+    def process_image_selection(self, images_list, product_data, supplier_name=None):
         """
         Procesează selecția manuală a imaginilor: permite utilizatorului să aleagă care imagini să păstreze.
+        Pentru MMS Mobile și MPS Mobile popup-ul apare mereu când sunt >1 imagine; pentru alți furnizori doar dacă e bifată opțiunea.
         Returnează lista de imagini selectate sau lista originală dacă utilizatorul anulează.
         """
         if not images_list or len(images_list) <= 1:
             return images_list
 
-        if not self.image_selection_var.get():
+        supplier = (supplier_name or product_data.get('furnizor_activ') or '').lower()
+        # Pentru mmsmobile și mpsmobile afișăm mereu popup când sunt mai multe imagini; altfel doar dacă e bifat
+        show_popup = supplier in ('mmsmobile', 'mpsmobile') or self.image_selection_var.get()
+        if not show_popup:
             return images_list
 
         product_name = product_data.get('name', 'Produs necunoscut')
@@ -3035,10 +3039,10 @@ class ImportProduse:
                         product_data['webgsm_sku'] = sku_furnizor
                         # sku_furnizor și ean_real sunt setate în scrape_product()
 
-                        # Selecție manuală imagini (doar pentru furnizori care nu sunt MobileSentrix)
+                        # Selecție manuală imagini (popup pentru MMS/MPS când >1 imagine; pentru alții doar dacă e bifat)
                         supplier_name = supplier_config.get("name", "").lower()
                         if product_data.get('images') and len(product_data['images']) > 1 and supplier_name != "mobilesentrix":
-                            product_data['images'] = self.process_image_selection(product_data['images'], product_data)
+                            product_data['images'] = self.process_image_selection(product_data['images'], product_data, supplier_name)
 
                         # Preview badge pe prima imagine (opțional): confirmă/modifică/skip; originalul rămâne backup
                         if product_data.get('images') and self.badge_preview_var.get():
