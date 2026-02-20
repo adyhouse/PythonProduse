@@ -2173,6 +2173,10 @@ class ImportProduse:
             calitate = 'Premium OEM'
         elif 'refurbished' in text or 'refurb' in text:
             calitate = 'Refurbished'
+        elif '(original)' in text:
+            calitate = 'Original'
+        elif re.search(r'\boriginal\b', text) and 'aftermarket' not in text and 'oem pull' not in text and 'genuine' not in text and 'service pack' not in text:
+            calitate = 'Original'
 
         # BRAND PIESA - extragere din titlul original (EN): Ampsentrix, JK, ZY, GX, Hex, Genuine
         brand_piesa = ''
