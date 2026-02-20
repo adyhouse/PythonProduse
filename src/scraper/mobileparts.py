@@ -128,7 +128,10 @@ class MobilepartsScraper(BaseScraper):
                 page_text = soup.get_text(separator="\n")
                 self._save_debug_html(soup, product_url)
             except ImportError:
-                self.log("   ✗ Eroare descărcare: 403. Pentru MobileParts instalează: pip install playwright && playwright install chromium", "ERROR")
+                self.log("   ✗ Site-ul MobileParts blochează accesul (403). Pentru a folosi acest furnizor:", "ERROR")
+                self.log("      1. În terminal: pip install playwright", "ERROR")
+                self.log("      2. Apoi: playwright install chromium", "ERROR")
+                self.log("   După instalare rulează din nou procesarea.", "ERROR")
                 return None
             except Exception as e:
                 self.log(f"   ✗ Eroare descărcare (și Playwright): {e}", "ERROR")

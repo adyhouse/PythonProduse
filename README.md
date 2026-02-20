@@ -122,6 +122,17 @@ SKU,EAN,Name,Published,Price,Images,meta:_warranty_period
 - python-dotenv (citire .env)
 - WooCommerce API
 
+### Furnizor MobileParts.shop (eroare 403)
+
+Site-ul MobileParts blochează cereri obișnuite (403). Pentru a folosi acest furnizor instalează **Playwright** și browserul Chromium:
+
+```bash
+pip install playwright
+playwright install chromium
+```
+
+După instalare, la procesare se va folosi automat un browser headless și paginile se vor încărca.
+
 ## 🔐 Securitate
 
 ⚠️ **Nu commit-a niciodată:**
