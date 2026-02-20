@@ -123,11 +123,37 @@ class MmsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
+            # Găsește blocul produsului care conține SKU-ul pentru a exclude produse similare
+            product_block = None
+            if sku_furnizor and sku_furnizor != "MMS-unknown":
+                for elem in soup.find_all(string=re.compile(re.escape(sku_furnizor), re.I)):
+                    parent = elem.find_parent(['main', 'article', 'div', 'section'])
+                    if parent:
+                        product_block = parent
+                        break
+            
+            if not product_block:
+                product_block = (
+                    soup.select_one("main") or soup.select_one("[class*='product-detail']")
+                    or soup.select_one(".product-detail") or soup.select_one("#product-detail")
+                    or soup.select_one("[class*='product-content']") or soup.select_one("article.product")
+                    or soup.select_one(".product") or soup.select_one("#product")
+                )
+            
+            # Exclude secțiuni de produse similare
+            if product_block:
+                for section in product_block.find_all(['section', 'div'], class_=re.compile(r'similar|related|recommend|also|other', re.I)):
+                    section.decompose()
+                for sidebar in product_block.find_all(['aside', 'div'], class_=re.compile(r'sidebar|related|recommend', re.I)):
+                    sidebar.decompose()
+            
+            search_soup = product_block if product_block else soup
+            
             img_selectors = selectors.get("images", ["img[src*='/web/image/product.template/']", "img[src*='/web/image/']"]) or ["img[src]"]
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
             for sel in img_selectors:
-                for img in soup.select(sel):
+                for img in search_soup.select(sel):
                     src = img.get("src") or img.get("data-src")
                     if src:
                         if not src.startswith("http"):

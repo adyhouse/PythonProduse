@@ -247,14 +247,35 @@ class MpsmobileScraper(BaseScraper):
                             _add(_normalize(part))
 
             # 4. Fallback: doar în zona produsului (evită imaginile de la "produse similare")
-            # Max 2 adiționale din fallback → total max 3 imagini (1 og:image + 2 galerie)
+            # Caută blocul care conține SKU-ul produsului pentru a exclude produse similare
             n_before_fallback = len(img_urls)
-            product_block = (
-                soup.select_one("main") or soup.select_one("[class*='product-detail']")
-                or soup.select_one(".product-detail") or soup.select_one("#product-detail")
-                or soup.select_one("[class*='product-content']") or soup.select_one("article.product")
-                or soup.select_one(".product") or soup.select_one("#product")
-            )
+            product_block = None
+            if sku_furnizor and sku_furnizor != "MPS-unknown":
+                # Găsește elementul care conține SKU-ul produsului
+                for elem in soup.find_all(string=re.compile(re.escape(sku_furnizor), re.I)):
+                    parent = elem.find_parent(['main', 'article', 'div', 'section'])
+                    if parent:
+                        product_block = parent
+                        break
+            
+            # Fallback: caută blocul principal de produs
+            if not product_block:
+                product_block = (
+                    soup.select_one("main") or soup.select_one("[class*='product-detail']")
+                    or soup.select_one(".product-detail") or soup.select_one("#product-detail")
+                    or soup.select_one("[class*='product-content']") or soup.select_one("article.product")
+                    or soup.select_one(".product") or soup.select_one("#product")
+                )
+            
+            # Exclude secțiuni de produse similare/related
+            if product_block:
+                # Șterge secțiuni care conțin "similar", "related", "recommend", "also"
+                for section in product_block.find_all(['section', 'div'], class_=re.compile(r'similar|related|recommend|also|other', re.I)):
+                    section.decompose()
+                # Șterge sidebar-uri care nu sunt parte din produsul principal
+                for sidebar in product_block.find_all(['aside', 'div'], class_=re.compile(r'sidebar|related|recommend', re.I)):
+                    sidebar.decompose()
+            
             raw_html = str(product_block) if product_block else ""
             max_from_fallback = 2
             fallback_count = 0

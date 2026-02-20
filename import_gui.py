@@ -1204,6 +1204,153 @@ class BadgePreviewWindow:
         self.window.destroy()
 
 
+class ImageSelectionWindow:
+    """Fereastră pentru selecția manuală a imaginilor produsului."""
+
+    def __init__(self, parent, images_list, product_name, callback, script_dir=None):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Selecție Imagini - WebGSM")
+        self.window.geometry("1000x700")
+        self.window.minsize(800, 600)
+        self.window.transient(parent)
+        self.window.grab_set()
+        self.images_list = images_list
+        self.product_name = product_name
+        self.callback = callback
+        self.script_dir = script_dir or Path(__file__).resolve().parent
+        self.selected_indices = set(range(len(images_list)))  # Toate selectate inițial
+        self.setup_ui()
+        self.window.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        self.window.lift()
+        self.window.focus_force()
+
+    def setup_ui(self):
+        """Construiește interfața."""
+        # Header
+        header = tk.Frame(self.window, bg='#f0f0f0', pady=10)
+        header.pack(fill='x')
+        tk.Label(header, text=f"Selectează imaginile pentru:", font=('', 12, 'bold'), bg='#f0f0f0').pack()
+        tk.Label(header, text=self.product_name[:80] + ("..." if len(self.product_name) > 80 else ""), 
+                 font=('', 10), bg='#f0f0f0', wraplength=900).pack()
+
+        # Container cu scroll pentru imagini
+        canvas_frame = tk.Frame(self.window)
+        canvas_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        scrollbar = tk.Scrollbar(canvas_frame, orient='vertical')
+        scrollbar.pack(side='right', fill='y')
+
+        canvas = tk.Canvas(canvas_frame, yscrollcommand=scrollbar.set, bg='white')
+        canvas.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=canvas.yview)
+
+        images_frame = tk.Frame(canvas, bg='white')
+        canvas_window = canvas.create_window((0, 0), window=images_frame, anchor='nw')
+
+        def on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        canvas.bind('<Configure>', on_canvas_configure)
+        images_frame.bind('<Configure>', on_frame_configure)
+
+        # Checkbox-uri pentru fiecare imagine
+        self.checkboxes = []
+        self.image_labels = []
+        cols = 3
+        for idx, img_item in enumerate(self.images_list):
+            img_path = img_item.get('local_path', img_item) if isinstance(img_item, dict) else img_item
+            row = idx // cols
+            col = idx % cols
+
+            frame = tk.Frame(images_frame, relief='raised', borderwidth=2, bg='white')
+            frame.grid(row=row, column=col, padx=5, pady=5, sticky='nsew')
+
+            var = tk.BooleanVar(value=True)
+            self.checkboxes.append(var)
+
+            def toggle_preview(idx=idx):
+                if var.get():
+                    self.selected_indices.add(idx)
+                else:
+                    self.selected_indices.discard(idx)
+                self.update_preview(idx)
+
+            checkbox = tk.Checkbutton(frame, variable=var, command=toggle_preview, bg='white')
+            checkbox.pack(anchor='nw', padx=5, pady=5)
+
+            # Preview imagine
+            try:
+                if Path(img_path).exists():
+                    img = Image.open(img_path)
+                    img.thumbnail((200, 200), Image.Resampling.LANCZOS)
+                    if img.mode == 'RGBA':
+                        img = img.convert('RGB')
+                    photo = ImageTk.PhotoImage(img)
+                    label = tk.Label(frame, image=photo, bg='white')
+                    label.image = photo
+                    label.pack(padx=5, pady=5)
+                    self.image_labels.append(label)
+                else:
+                    tk.Label(frame, text=f"Imagine {idx+1}\nNu există", bg='white', fg='red').pack(padx=5, pady=5)
+                    self.image_labels.append(None)
+            except Exception as e:
+                tk.Label(frame, text=f"Imagine {idx+1}\nEroare: {str(e)[:30]}", bg='white', fg='red').pack(padx=5, pady=5)
+                self.image_labels.append(None)
+
+            # Nume fișier
+            name = img_item.get('name', Path(img_path).name) if isinstance(img_item, dict) else Path(img_path).name
+            tk.Label(frame, text=name[:30] + ("..." if len(name) > 30 else ""), 
+                    font=('', 8), bg='white', wraplength=200).pack(padx=5, pady=2)
+
+        images_frame.grid_columnconfigure(0, weight=1)
+        images_frame.grid_columnconfigure(1, weight=1)
+        images_frame.grid_columnconfigure(2, weight=1)
+
+        # Butoane
+        btn_frame = tk.Frame(self.window, pady=10)
+        btn_frame.pack(fill='x')
+
+        tk.Button(btn_frame, text="Selectează toate", command=self.select_all, 
+                 bg='#4CAF50', fg='white', padx=15, pady=5).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="Deselectează toate", command=self.deselect_all,
+                 bg='#f44336', fg='white', padx=15, pady=5).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="Confirmă selecția", command=self.on_confirm,
+                 bg='#2196F3', fg='white', padx=20, pady=5, font=('', 10, 'bold')).pack(side='right', padx=5)
+        tk.Button(btn_frame, text="Anulează", command=self.on_cancel,
+                 bg='#757575', fg='white', padx=15, pady=5).pack(side='right', padx=5)
+
+    def update_preview(self, idx):
+        """Actualizează preview-ul pentru o imagine."""
+        pass  # Poate fi extins pentru highlight
+
+    def select_all(self):
+        """Selectează toate imaginile."""
+        for idx, var in enumerate(self.checkboxes):
+            var.set(True)
+            self.selected_indices.add(idx)
+
+    def deselect_all(self):
+        """Deselectează toate imaginile."""
+        for var in self.checkboxes:
+            var.set(False)
+        self.selected_indices.clear()
+
+    def on_confirm(self):
+        """Confirmă selecția și returnează doar imaginile selectate."""
+        selected = [self.images_list[i] for i in sorted(self.selected_indices)]
+        self.callback('confirm', selected)
+        self.window.destroy()
+
+    def on_cancel(self):
+        """Anulează și păstrează toate imaginile."""
+        self.callback('cancel', self.images_list)
+        self.window.destroy()
+
+
 class ImportProduse:
     def __init__(self, root):
         self.root = root
@@ -1324,6 +1471,7 @@ class ImportProduse:
         self.convert_price_var = tk.BooleanVar(value=True)
         self.extract_description_var = tk.BooleanVar(value=True)
         self.badge_preview_var = tk.BooleanVar(value=False)
+        self.image_selection_var = tk.BooleanVar(value=False)
         
         # Text roșu de avertizare – vizibil doar când bifa de badge e activată
         self._badge_warning_label = tk.Label(
@@ -1350,7 +1498,7 @@ class ImportProduse:
         ttk.Checkbutton(frame_options, text="Convertește prețul EUR → RON", 
                        variable=self.convert_price_var).grid(row=4, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Extrage descriere în română", 
-                       variable=self.extract_description_var).grid(row=5, column=0, sticky='w', padx=5, pady=2)
+                       variable=self.extract_description_var).grid(row=6, column=0, sticky='w', padx=5, pady=2)
         
         # Progress
         frame_progress = ttk.Frame(parent)
@@ -2828,6 +2976,11 @@ class ImportProduse:
                         sku_furnizor = product_data.get('sku_furnizor', product_data.get('sku', ''))
                         product_data['webgsm_sku'] = sku_furnizor
                         # sku_furnizor și ean_real sunt setate în scrape_product()
+
+                        # Selecție manuală imagini (doar pentru furnizori care nu sunt MobileSentrix)
+                        supplier_name = supplier_config.get("name", "").lower()
+                        if product_data.get('images') and len(product_data['images']) > 1 and supplier_name != "mobilesentrix":
+                            product_data['images'] = self.process_image_selection(product_data['images'], product_data)
 
                         # Preview badge pe prima imagine (opțional): confirmă/modifică/skip; originalul rămâne backup
                         if product_data.get('images') and self.badge_preview_var.get():
