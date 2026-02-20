@@ -135,22 +135,35 @@ class MpsmobileScraper(BaseScraper):
                     u = site_root + u if u.startswith("/") else site_root + "/" + u
                 return u
 
+            # MPS: varianta mare e mereu la .../data/product/images/detail/normal/UUID.ext
+            _LARGE_PATH = "detail/normal"
+
             def _canonical_mps_image_url(url):
-                """Forțează URL imagine MPS la formă canonică: mpsmobile.de/data/product/images/...
-                Elimină /en/, /de/ și path-uri greșite (ex: .../en/data/images/product/images/)."""
+                """Forțează URL imagine MPS la formă canonică: .../data/product/images/detail/normal/...
+                Elimină /en/, /de/. Thumbnail/small devin detail/normal = o singură URL mare, fără duplicate."""
                 if not url:
                     return url
-                # Path corect: extrage data/product/images/... și rebuild
+                # Extrage UUID + extensie (sau path după data/product/images/)
                 for marker in ("data/product/images/", "product/images/"):
                     if marker in url:
                         idx = url.find(marker)
                         suffix = url[idx + len(marker):].split("?")[0].strip()
                         if suffix and ".." not in suffix:
+                            # Dacă e thumbnail/small/mini, folosim doar numele fișierului → detail/normal
+                            lower = suffix.lower()
+                            if any(lower.startswith(p) for p in ("thumbnail/", "thumb/", "small/", "mini/", "tiny/", "preview/", "small_image/")):
+                                # păstrăm doar UUID.ext sau ultimul segment
+                                filename = suffix.split("/")[-1]
+                                if filename and "." in filename:
+                                    suffix = _LARGE_PATH + "/" + filename
+                            elif "/" not in suffix or not suffix.startswith(_LARGE_PATH):
+                                # path necunoscut – dacă avem doar UUID.ext, punem detail/normal
+                                if re.match(r"[0-9A-Fa-f-]{36}\.(?:jpg|jpeg|png|webp|gif)$", suffix, re.I):
+                                    suffix = _LARGE_PATH + "/" + suffix
                             return site_root + "/data/product/images/" + suffix
-                # Doar UUID.ext în URL – presupunem detail/normal
                 match = re.search(r"([0-9A-Fa-f-]{36}\.(?:jpg|jpeg|png|webp|gif))", url)
                 if match:
-                    return site_root + "/data/product/images/detail/normal/" + match.group(1)
+                    return site_root + "/data/product/images/" + _LARGE_PATH + "/" + match.group(1)
                 return url
 
             def _is_icon_or_logo(url):
