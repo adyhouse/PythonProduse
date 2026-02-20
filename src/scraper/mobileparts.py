@@ -262,11 +262,13 @@ class MobilepartsScraper(BaseScraper):
         if not self.skip_images:
             seen = set()
             def add_img_url(src):
-                if not src or "logo" in src.lower() or "icon" in src.lower() or "pixel" in src.lower():
+                if not src or src.strip().startswith("data:"):
+                    return
+                if "logo" in src.lower() or "icon" in src.lower() or "pixel" in src.lower():
                     return
                 if not src.startswith("http"):
                     src = base_url + src if src.startswith("/") else base_url + "/" + src
-                if src not in seen and (".jpg" in src.lower() or ".jpeg" in src.lower() or ".png" in src.lower() or ".webp" in src.lower() or "image" in src.lower()):
+                if src not in seen and (".jpg" in src.lower() or ".jpeg" in src.lower() or ".png" in src.lower() or ".webp" in src.lower() or ("image" in src.lower() and "data:" not in src.lower())):
                     seen.add(src)
                     img_urls.append(src)
 
