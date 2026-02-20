@@ -24,11 +24,25 @@ class BaseScraper(ABC):
         self.app = app
         self.name = config.get("name", "unknown")
         self.skip_images = config.get("skip_images", False)
+        self.session = None  # Session pentru login (dacă e necesar)
 
     def log(self, message: str, level: str = "INFO"):
         """Redirect la logger-ul aplicației."""
         if hasattr(self.app, "log"):
             self.app.log(message, level)
+
+    def _headers(self) -> Dict[str, str]:
+        """Returnează headers default pentru request-uri. Poate fi suprascrisă în subclase."""
+        return {
+            "User-Agent": self.config.get("headers", {}).get(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": self.config.get("headers", {}).get(
+                "Accept-Language", "en-US,en;q=0.9"
+            ),
+        }
 
     @property
     def script_dir(self):
@@ -131,6 +145,136 @@ class BaseScraper(ABC):
                 if i + 1 < len(cells):
                     return (cells[i + 1].get_text(strip=True) or "").strip()
         return ""
+
+    def _login_if_required(self) -> bool:
+        """
+        Face login dacă este necesar (config.login.required = true).
+        Returnează True dacă login-ul a reușit sau nu era necesar, False dacă a eșuat.
+        """
+        login_config = self.config.get("login", {})
+        if not login_config.get("required", False):
+            return True
+        
+        import os
+        from dotenv import load_dotenv
+        
+        # Încarcă .env din script_dir
+        script_dir = self.script_dir
+        if script_dir:
+            env_file = Path(script_dir) / ".env"
+            if env_file.exists():
+                load_dotenv(env_file)
+        
+        # Extrage username și password din .env
+        username_key = login_config.get("username", "").replace("USERNAME_FROM_ENV", "")
+        password_key = login_config.get("password", "").replace("PASSWORD_FROM_ENV", "")
+        
+        # Încearcă mai multe variabile de mediu posibile
+        username = os.getenv("MMSMOBILE_USERNAME") or os.getenv("MMS_USERNAME") or os.getenv("MMSMOBILE_LOGIN") or ""
+        password = os.getenv("MMSMOBILE_PASSWORD") or os.getenv("MMS_PASSWORD") or os.getenv("MMSMOBILE_PASS") or ""
+        
+        # Dacă nu găsește, încearcă variabile generice
+        if not username:
+            username = os.getenv("SUPPLIER_USERNAME", "")
+        if not password:
+            password = os.getenv("SUPPLIER_PASSWORD", "")
+        
+        if not username or not password:
+            self.log("   ⚠️ Login necesar dar USERNAME/PASSWORD lipsesc din .env", "WARNING")
+            return False
+        
+        base_url = self.config.get("base_url", "").rstrip("/")
+        login_url = login_config.get("url", "").format(base_url=base_url)
+        
+        if not login_url:
+            self.log("   ⚠️ Login URL lipsă din config", "WARNING")
+            return False
+        
+        try:
+            self.session = requests.Session()
+            # Obține pagina de login pentru CSRF token (dacă e necesar)
+            login_page = self.session.get(login_url, headers=self._headers(), timeout=15)
+            login_page.raise_for_status()
+            
+            # Încearcă login-ul (poate necesita CSRF token sau alte câmpuri)
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(login_page.content, "html.parser")
+            
+            # Pentru Odoo (/web/login), câmpurile sunt de obicei "login" și "password"
+            # Caută formularul de login
+            login_form = soup.find("form") or soup.find("form", {"id": re.compile(r"login|auth", re.I)})
+            
+            login_data = {}
+            
+            # Extrage toate input-urile din formular (inclusiv hidden pentru CSRF)
+            if login_form:
+                for inp in login_form.find_all("input"):
+                    name = inp.get("name")
+                    value = inp.get("value", "")
+                    if name:
+                        login_data[name] = value
+            
+            # Setează username și password
+            # Odoo folosește de obicei "login" pentru username
+            if "login" in login_data or any("login" in k.lower() for k in login_data.keys()):
+                # Găsește câmpul corect pentru login
+                login_field = None
+                for key in login_data.keys():
+                    if "login" in key.lower() and "password" not in key.lower():
+                        login_field = key
+                        break
+                if login_field:
+                    login_data[login_field] = username
+                else:
+                    login_data["login"] = username
+            else:
+                login_data["login"] = username
+            
+            # Setează password
+            if "password" in login_data or any("password" in k.lower() for k in login_data.keys()):
+                password_field = None
+                for key in login_data.keys():
+                    if "password" in key.lower():
+                        password_field = key
+                        break
+                if password_field:
+                    login_data[password_field] = password
+                else:
+                    login_data["password"] = password
+            else:
+                login_data["password"] = password
+            
+            # Obține action URL din formular (dacă există)
+            action_url = login_url
+            if login_form and login_form.get("action"):
+                action = login_form.get("action")
+                if action.startswith("http"):
+                    action_url = action
+                elif action.startswith("/"):
+                    action_url = base_url + action
+                else:
+                    action_url = login_url.rstrip("/") + "/" + action
+            
+            response = self.session.post(action_url, data=login_data, headers=self._headers(), timeout=15, allow_redirects=False)
+            
+            # Verifică dacă login-ul a reușit (redirect sau mesaj de succes)
+            # Odoo de obicei redirectează la /web sau /web#home după login reușit
+            if response.status_code == 302 or (response.status_code == 200 and ("/web" in response.headers.get("Location", "") or "logout" in response.text.lower() or "my account" in response.text.lower())):
+                # Dacă e redirect, urmează redirect-ul
+                if response.status_code == 302:
+                    redirect_url = response.headers.get("Location", "")
+                    if redirect_url:
+                        if not redirect_url.startswith("http"):
+                            redirect_url = base_url + redirect_url if redirect_url.startswith("/") else base_url + "/" + redirect_url
+                        self.session.get(redirect_url, headers=self._headers(), timeout=15)
+                self.log("   ✓ Login reușit", "SUCCESS")
+                return True
+            else:
+                self.log("   ⚠️ Login eșuat - verifică credențiale în .env", "WARNING")
+                return False
+        except Exception as e:
+            self.log(f"   ⚠️ Eroare login: {e}", "WARNING")
+            return False
 
     def _save_debug_html(self, soup: Any, product_url: str = ""):
         """Salvează HTML-ul paginii produsului în logs/ pentru debugging."""

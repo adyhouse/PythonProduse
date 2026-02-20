@@ -52,6 +52,10 @@ class MpsmobileScraper(BaseScraper):
         sku_or_url = sku_or_url.strip()
         base_url = self.config.get("base_url", "https://mpsmobile.de").rstrip("/")
 
+        # Login dacă e necesar
+        if not self._login_if_required():
+            self.log("   ⚠️ Continuă fără login (conținutul poate fi limitat)", "WARNING")
+
         if sku_or_url.startswith("http://") or sku_or_url.startswith("https://"):
             product_url = sku_or_url
             self.log("   ✓ Link direct detectat", "INFO")
@@ -62,7 +66,11 @@ class MpsmobileScraper(BaseScraper):
                 return None
 
         try:
-            r = requests.get(product_url, headers=self._headers(), timeout=30)
+            # Folosește session dacă există (după login), altfel requests normal
+            if self.session:
+                r = self.session.get(product_url, headers=self._headers(), timeout=30)
+            else:
+                r = requests.get(product_url, headers=self._headers(), timeout=30)
             r.raise_for_status()
             soup = BeautifulSoup(r.content, "html.parser")
             page_text = soup.get_text(separator="\n")
