@@ -160,28 +160,54 @@ class BaseScraper(ABC):
         
         # Încarcă .env din script_dir
         script_dir = self.script_dir
+        env_file = None
         if script_dir:
             env_file = Path(script_dir) / ".env"
             if env_file.exists():
-                load_dotenv(env_file)
+                load_dotenv(env_file, override=True)
+                self.log(f"   📄 .env încărcat: {env_file}", "INFO")
+            else:
+                self.log(f"   ⚠️ .env nu există la: {env_file}", "WARNING")
         
-        # Extrage username și password din .env
-        username_key = login_config.get("username", "").replace("USERNAME_FROM_ENV", "")
-        password_key = login_config.get("password", "").replace("PASSWORD_FROM_ENV", "")
-        
+        # Construiește numele variabilelor bazat pe numele furnizorului
+        supplier_name = self.name.upper()
         # Încearcă mai multe variabile de mediu posibile
-        username = os.getenv("MMSMOBILE_USERNAME") or os.getenv("MMS_USERNAME") or os.getenv("MMSMOBILE_LOGIN") or ""
-        password = os.getenv("MMSMOBILE_PASSWORD") or os.getenv("MMS_PASSWORD") or os.getenv("MMSMOBILE_PASS") or ""
+        username = (
+            os.getenv(f"{supplier_name}_USERNAME") or
+            os.getenv(f"{supplier_name}_LOGIN") or
+            os.getenv("MMSMOBILE_USERNAME") or
+            os.getenv("MPSMOBILE_USERNAME") or
+            os.getenv("MMS_USERNAME") or
+            os.getenv("MPS_USERNAME") or
+            os.getenv("SUPPLIER_USERNAME") or
+            ""
+        )
+        password = (
+            os.getenv(f"{supplier_name}_PASSWORD") or
+            os.getenv(f"{supplier_name}_PASS") or
+            os.getenv("MMSMOBILE_PASSWORD") or
+            os.getenv("MPSMOBILE_PASSWORD") or
+            os.getenv("MMS_PASSWORD") or
+            os.getenv("MPS_PASSWORD") or
+            os.getenv("SUPPLIER_PASSWORD") or
+            ""
+        )
         
-        # Dacă nu găsește, încearcă variabile generice
-        if not username:
-            username = os.getenv("SUPPLIER_USERNAME", "")
-        if not password:
-            password = os.getenv("SUPPLIER_PASSWORD", "")
+        # Debug: arată ce variabile sunt căutate
+        if not username or not password:
+            self.log(f"   🔍 Căutare variabile: {supplier_name}_USERNAME, {supplier_name}_PASSWORD, MMSMOBILE_*, MPSMOBILE_*, SUPPLIER_*", "INFO")
+            # Listă toate variabilele de mediu care conțin "MOBILE" sau "USERNAME" sau "PASSWORD" pentru debugging
+            all_env_vars = {k: "***" if "PASS" in k or "PASSWORD" in k else v for k, v in os.environ.items() if "MOBILE" in k.upper() or "USERNAME" in k.upper() or "PASSWORD" in k.upper()}
+            if all_env_vars:
+                self.log(f"   📋 Variabile găsite în .env: {list(all_env_vars.keys())}", "INFO")
+            else:
+                self.log("   ⚠️ Nu s-au găsit variabile relevante în .env", "WARNING")
         
         if not username or not password:
-            self.log("   ⚠️ Login necesar dar USERNAME/PASSWORD lipsesc din .env", "WARNING")
+            self.log(f"   ⚠️ Login necesar dar USERNAME/PASSWORD lipsesc din .env (username={'✓' if username else '✗'}, password={'✓' if password else '✗'})", "WARNING")
             return False
+        
+        self.log(f"   ✓ Credențiale găsite (username: {username[:3]}***)", "INFO")
         
         base_url = self.config.get("base_url", "").rstrip("/")
         login_url = login_config.get("url", "").format(base_url=base_url)
@@ -191,10 +217,12 @@ class BaseScraper(ABC):
             return False
         
         try:
+            self.log(f"   🔐 Încearcă login la: {login_url}", "INFO")
             self.session = requests.Session()
             # Obține pagina de login pentru CSRF token (dacă e necesar)
             login_page = self.session.get(login_url, headers=self._headers(), timeout=15)
             login_page.raise_for_status()
+            self.log(f"   ✓ Pagină login accesată (status: {login_page.status_code})", "INFO")
             
             # Încearcă login-ul (poate necesita CSRF token sau alte câmpuri)
             from bs4 import BeautifulSoup
@@ -204,6 +232,10 @@ class BaseScraper(ABC):
             # Caută formularul de login
             login_form = soup.find("form") or soup.find("form", {"id": re.compile(r"login|auth", re.I)})
             
+            if not login_form:
+                # Încearcă să găsească orice formular
+                login_form = soup.find("form")
+            
             login_data = {}
             
             # Extrage toate input-urile din formular (inclusiv hidden pentru CSRF)
@@ -211,38 +243,50 @@ class BaseScraper(ABC):
                 for inp in login_form.find_all("input"):
                     name = inp.get("name")
                     value = inp.get("value", "")
-                    if name:
+                    inp_type = inp.get("type", "").lower()
+                    if name and inp_type != "submit":
                         login_data[name] = value
+                self.log(f"   📋 Câmpuri formular găsite: {list(login_data.keys())}", "INFO")
+            else:
+                self.log("   ⚠️ Formular de login negăsit în HTML", "WARNING")
             
             # Setează username și password
             # Odoo folosește de obicei "login" pentru username
-            if "login" in login_data or any("login" in k.lower() for k in login_data.keys()):
-                # Găsește câmpul corect pentru login
-                login_field = None
-                for key in login_data.keys():
-                    if "login" in key.lower() and "password" not in key.lower():
-                        login_field = key
+            login_field = None
+            for key in login_data.keys():
+                if "login" in key.lower() and "password" not in key.lower() and "csrf" not in key.lower():
+                    login_field = key
+                    break
+            
+            if login_field:
+                login_data[login_field] = username
+                self.log(f"   ✓ Username setat în câmpul '{login_field}'", "INFO")
+            else:
+                # Încearcă variante comune
+                for field_name in ["login", "username", "email", "user"]:
+                    if field_name not in login_data:
+                        login_data[field_name] = username
+                        login_field = field_name
                         break
                 if login_field:
-                    login_data[login_field] = username
+                    self.log(f"   ✓ Username setat în câmpul '{login_field}' (fallback)", "INFO")
                 else:
                     login_data["login"] = username
-            else:
-                login_data["login"] = username
+                    self.log("   ✓ Username setat în 'login' (default)", "INFO")
             
             # Setează password
-            if "password" in login_data or any("password" in k.lower() for k in login_data.keys()):
-                password_field = None
-                for key in login_data.keys():
-                    if "password" in key.lower():
-                        password_field = key
-                        break
-                if password_field:
-                    login_data[password_field] = password
-                else:
-                    login_data["password"] = password
+            password_field = None
+            for key in login_data.keys():
+                if "password" in key.lower():
+                    password_field = key
+                    break
+            
+            if password_field:
+                login_data[password_field] = password
+                self.log(f"   ✓ Password setat în câmpul '{password_field}'", "INFO")
             else:
                 login_data["password"] = password
+                self.log("   ✓ Password setat în 'password' (default)", "INFO")
             
             # Obține action URL din formular (dacă există)
             action_url = login_url
@@ -252,28 +296,54 @@ class BaseScraper(ABC):
                     action_url = action
                 elif action.startswith("/"):
                     action_url = base_url + action
-                else:
+                elif action:
                     action_url = login_url.rstrip("/") + "/" + action
+                self.log(f"   📍 Action URL: {action_url}", "INFO")
             
+            # Trimite request-ul de login
+            self.log(f"   📤 Trimite date login...", "INFO")
             response = self.session.post(action_url, data=login_data, headers=self._headers(), timeout=15, allow_redirects=False)
+            self.log(f"   📥 Răspuns login (status: {response.status_code})", "INFO")
             
             # Verifică dacă login-ul a reușit (redirect sau mesaj de succes)
             # Odoo de obicei redirectează la /web sau /web#home după login reușit
-            if response.status_code == 302 or (response.status_code == 200 and ("/web" in response.headers.get("Location", "") or "logout" in response.text.lower() or "my account" in response.text.lower())):
+            location = response.headers.get("Location", "")
+            response_text_lower = response.text.lower()
+            
+            success_indicators = [
+                response.status_code == 302,
+                "/web" in location,
+                "/web#" in location,
+                "logout" in response_text_lower,
+                "my account" in response_text_lower,
+                "dashboard" in response_text_lower,
+            ]
+            
+            if any(success_indicators):
                 # Dacă e redirect, urmează redirect-ul
-                if response.status_code == 302:
-                    redirect_url = response.headers.get("Location", "")
-                    if redirect_url:
-                        if not redirect_url.startswith("http"):
-                            redirect_url = base_url + redirect_url if redirect_url.startswith("/") else base_url + "/" + redirect_url
-                        self.session.get(redirect_url, headers=self._headers(), timeout=15)
+                if response.status_code == 302 and location:
+                    if not location.startswith("http"):
+                        location = base_url + location if location.startswith("/") else base_url + "/" + location
+                    self.log(f"   🔄 Urmează redirect la: {location}", "INFO")
+                    self.session.get(location, headers=self._headers(), timeout=15)
                 self.log("   ✓ Login reușit", "SUCCESS")
                 return True
             else:
-                self.log("   ⚠️ Login eșuat - verifică credențiale în .env", "WARNING")
+                # Salvează HTML-ul răspunsului pentru debugging
+                debug_file = Path(script_dir) / "logs" / f"login_failed_{self.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                debug_file.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with open(debug_file, 'w', encoding='utf-8') as f:
+                        f.write(response.text)
+                    self.log(f"   📝 Răspuns login salvat pentru debugging: {debug_file}", "INFO")
+                except:
+                    pass
+                self.log(f"   ⚠️ Login eșuat - verifică credențiale în .env (status: {response.status_code}, location: {location[:50] if location else 'none'})", "WARNING")
                 return False
         except Exception as e:
+            import traceback
             self.log(f"   ⚠️ Eroare login: {e}", "WARNING")
+            self.log(f"   📋 Traceback: {traceback.format_exc()[:200]}", "DEBUG")
             return False
 
     def _save_debug_html(self, soup: Any, product_url: str = ""):
