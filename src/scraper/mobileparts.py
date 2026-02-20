@@ -2,6 +2,7 @@
 Scraper MobileParts.shop.
 Selectori din config. Căutare / link direct.
 """
+import os
 import re
 import time
 from typing import Dict, List, Optional
@@ -120,7 +121,9 @@ class MobilepartsScraper(BaseScraper):
                 from playwright.sync_api import sync_playwright
                 self.log("   🌐 Încerc cu browser (Playwright)...", "INFO")
                 with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True)
+                    # headless=False poate trece verificarea (setează MOBILEPARTS_HEADLESS=0 în .env dacă e nevoie)
+                    headless = os.environ.get("MOBILEPARTS_HEADLESS", "1") != "0"
+                    browser = p.chromium.launch(headless=headless)
                     page = browser.new_page()
                     page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
                     # Așteptăm să treacă verificarea anti-bot („Performing security verification”)
