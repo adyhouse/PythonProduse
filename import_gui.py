@@ -3760,16 +3760,13 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         price_eur = float(_p) if _p not in (None, '') else 0.0
                     except (TypeError, ValueError):
                         price_eur = 0.0
-                    # Calculează preț vânzare RON: achiziție EUR → RON → adaos 40% → TVA 19%
-                    # Preț achiziție în LEI cu TVA: EUR × 5.1 (curs) × 1.21 (TVA achiziție 21%)
-                    curs_achizitie = 5.1
-                    tva_achizitie = 1.21
-                    pret_achizitie_lei_cu_tva = round(price_eur * curs_achizitie * tva_achizitie, 2)
+                    # Preț în RON: doar conversie la curs (fără adaos/TVA) – prețul din CSV = preț site în EUR × curs
                     if self.convert_price_var.get():
-                        exchange_rate = float(self.exchange_rate_var.get())
-                        price_ron = self.calculate_selling_price(
-                            price_eur, exchange_rate=exchange_rate, markup=0.40, vat=0.19
-                        )
+                        try:
+                            exchange_rate = float(self.exchange_rate_var.get().strip() or "4.97")
+                        except (ValueError, TypeError):
+                            exchange_rate = 4.97
+                        price_ron = round(price_eur * exchange_rate, 2)
                     else:
                         price_ron = price_eur
 
