@@ -114,8 +114,25 @@ class MobilepartsScraper(BaseScraper):
                     continue
                 raise
         if last_error is not None:
-            self.log(f"   ✗ Eroare descărcare: {last_error}", "ERROR")
-            return None
+            # Fallback: Playwright (browser real) – site-ul dă 403 la requests
+            try:
+                from playwright.sync_api import sync_playwright
+                self.log("   🌐 Încerc cu browser (Playwright)...", "INFO")
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page()
+                    page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+                    html = page.content()
+                    browser.close()
+                soup = BeautifulSoup(html, "html.parser")
+                page_text = soup.get_text(separator="\n")
+                self._save_debug_html(soup, product_url)
+            except ImportError:
+                self.log("   ✗ Eroare descărcare: 403. Pentru MobileParts instalează: pip install playwright && playwright install chromium", "ERROR")
+                return None
+            except Exception as e:
+                self.log(f"   ✗ Eroare descărcare (și Playwright): {e}", "ERROR")
+                return None
 
         selectors = self.config.get("selectors", {})
 

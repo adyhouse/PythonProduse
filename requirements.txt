@@ -5,3 +5,5 @@ Pillow>=10.0.0
 python-dotenv>=1.0.0
 pyinstaller>=6.0.0
 deep-translator>=1.11.4
+# Opțional: pentru MobileParts.shop (site dă 403 fără browser real)
+playwright>=1.40.0
