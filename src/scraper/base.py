@@ -5,6 +5,7 @@ un dict compatibil cu pipeline-ul WebGSM (product_data).
 """
 import re
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -130,6 +131,25 @@ class BaseScraper(ABC):
                 if i + 1 < len(cells):
                     return (cells[i + 1].get_text(strip=True) or "").strip()
         return ""
+
+    def _save_debug_html(self, soup: Any, product_url: str = ""):
+        """Salvează HTML-ul paginii produsului în logs/ pentru debugging."""
+        if not soup or not hasattr(soup, "prettify"):
+            return
+        script_dir = self.script_dir
+        if not script_dir:
+            return
+        logs_dir = Path(script_dir) / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        supplier_name = self.name or "unknown"
+        debug_file = logs_dir / f"debug_product_{supplier_name}_{timestamp}.html"
+        try:
+            with open(debug_file, 'w', encoding='utf-8') as f:
+                f.write(soup.prettify())
+            self.log(f"   📝 HTML produs salvat: {debug_file}", "INFO")
+        except Exception as e:
+            self.log(f"   ⚠️ Eroare salvare HTML: {e}", "WARNING")
 
     def _download_images(
         self, img_urls: List[str], product_id: str, headers: Optional[Dict] = None, max_images: int = 10

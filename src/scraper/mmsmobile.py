@@ -66,6 +66,8 @@ class MmsmobileScraper(BaseScraper):
             r.raise_for_status()
             soup = BeautifulSoup(r.content, "html.parser")
             page_text = soup.get_text(separator="\n")
+            # Salvează HTML pentru debugging
+            self._save_debug_html(soup, product_url)
         except Exception as e:
             self.log(f"   ✗ Eroare descărcare: {e}", "ERROR")
             return None

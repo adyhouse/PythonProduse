@@ -71,6 +71,8 @@ class ComponentidigitaliScraper(BaseScraper):
             r = requests.get(product_url, headers=self._headers(), timeout=30)
             r.raise_for_status()
             soup = BeautifulSoup(r.content, "html.parser")
+            # Salvează HTML pentru debugging
+            self._save_debug_html(soup, product_url)
             page_text = soup.get_text(separator="\n")
         except Exception as e:
             self.log(f"   ✗ Eroare descărcare pagină: {e}", "ERROR")

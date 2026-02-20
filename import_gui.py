@@ -2812,6 +2812,62 @@ class ImportProduse:
             return batch.get('data'), batch.get('style')
         return None
 
+    def _run_image_selection(self, images_list, product_name):
+        """Rulează pe main thread: deschide fereastra de selecție imagini."""
+        def on_done(action, selected_images):
+            self._image_selection_result = {'action': action, 'images': selected_images}
+            if getattr(self, '_image_selection_event', None):
+                self._image_selection_event.set()
+
+        ImageSelectionWindow(self.root, images_list, product_name, on_done, self._script_dir)
+
+    def process_image_selection(self, images_list, product_data):
+        """
+        Procesează selecția manuală a imaginilor: permite utilizatorului să aleagă care imagini să păstreze.
+        Returnează lista de imagini selectate sau lista originală dacă utilizatorul anulează.
+        """
+        if not images_list or len(images_list) <= 1:
+            return images_list
+
+        if not self.image_selection_var.get():
+            return images_list
+
+        product_name = product_data.get('name', 'Produs necunoscut')
+        self.log(f"   🖼️ Selecție manuală imagini: {len(images_list)} imagini găsite", "INFO")
+
+        self._image_selection_event = threading.Event()
+        self._image_selection_result = None
+        self.root.after(0, lambda: self._run_image_selection(images_list, product_name))
+        self._image_selection_event.wait()
+
+        res = self._image_selection_result
+        if not res:
+            return images_list
+
+        action = res.get('action')
+        if action == 'cancel':
+            self.log("   ⏭️ Selecție anulată – păstrăm toate imaginile", "INFO")
+            return images_list
+
+        selected = res.get('images', [])
+        if not selected:
+            self.log("   ⚠️ Nicio imagine selectată – păstrăm toate", "WARNING")
+            return images_list
+
+        # Șterge imaginile ne-selectate
+        selected_paths = {img.get('local_path', img) if isinstance(img, dict) else img for img in selected}
+        for img_item in images_list:
+            img_path = img_item.get('local_path', img_item) if isinstance(img_item, dict) else img_item
+            if img_path not in selected_paths and Path(img_path).exists():
+                try:
+                    Path(img_path).unlink()
+                    self.log(f"   🗑️ Șters: {Path(img_path).name}", "INFO")
+                except Exception as e:
+                    self.log(f"   ⚠️ Eroare ștergere {Path(img_path).name}: {e}", "WARNING")
+
+        self.log(f"   ✓ {len(selected)} imagini selectate din {len(images_list)}", "SUCCESS")
+        return selected
+
     def _run_badge_preview(self, images_list, image_index, product_data):
         """Rulează pe main thread: deschide fereastra de preview badge-uri pentru imaginea image_index."""
         name = (product_data.get('name') or '').lower()
