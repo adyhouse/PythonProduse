@@ -5,6 +5,7 @@ Selectori din config. Căutare / link direct.
 import re
 import time
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
