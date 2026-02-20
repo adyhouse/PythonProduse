@@ -167,6 +167,15 @@ class MobilepartsScraper(BaseScraper):
                 name = el.get_text(strip=True)
                 break
         if not name:
+            # Fallback: din textul paginii – linie tip "Battery (Original), Apple iPhone Air"
+            skip = ("available for", "here available", "Read more", "Description", "Specifications", "€", "Log in", "Register", "What are you looking")
+            for line in page_text.split("\n"):
+                line = line.strip()
+                if 20 < len(line) < 120 and "Apple" in line and ("," in line or "Original" in line):
+                    if not any(s in line for s in skip):
+                        name = line[:200]
+                        break
+        if not name:
             # Fallback: din URL slug (ex. battery-original-apple-iphone-air)
             path = parsed.path.strip("/").split("/")
             for part in reversed(path):
@@ -189,6 +198,14 @@ class MobilepartsScraper(BaseScraper):
                         pass
                     if price > 0:
                         break
+        if price <= 0:
+            # Fallback: € 63.00 în textul paginii
+            m = re.search(r"€\s*([\d]+[.,]\d{2})", page_text)
+            if m:
+                try:
+                    price = float(m.group(1).replace(",", "."))
+                except ValueError:
+                    pass
 
         description = ""
         for sel in selectors.get("description", [".product-description", ".description", "[itemprop=description]"]):
@@ -197,6 +214,19 @@ class MobilepartsScraper(BaseScraper):
                 description = el.get_text(separator="\n", strip=True)[:3000]
                 if len(description) > 30:
                     break
+        if not description or len(description) < 20:
+            # Fallback: bloc după "Description" sau "Description by manufacturer"
+            for marker in ("Description by manufacturer", "Description\n"):
+                idx = page_text.find(marker)
+                if idx >= 0:
+                    rest = page_text[idx + len(marker):].strip().split("\n")
+                    for line in rest:
+                        line = line.strip()
+                        if len(line) > 20 and "€" not in line and "Log in" not in line:
+                            description = line[:2000]
+                            break
+                    if description:
+                        break
         if not description:
             description = name
 
