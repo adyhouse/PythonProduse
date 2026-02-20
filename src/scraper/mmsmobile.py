@@ -137,75 +137,14 @@ class MmsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
-            self.log("   🖼️ Descarc imagini MARI...", "INFO")
-            # Găsește blocul produsului care conține SKU-ul SAU numele produsului
-            product_block = None
-            
-            # 1. Caută blocul care conține SKU-ul
-            if sku_furnizor and sku_furnizor != "MMS-unknown":
-                for elem in soup.find_all(string=re.compile(re.escape(sku_furnizor), re.I)):
-                    parent = elem.find_parent(['main', 'article', 'div', 'section'])
-                    if parent:
-                        # Verifică că nu e din sidebar sau related
-                        parent_class = ' '.join(parent.get('class', [])).lower()
-                        parent_id = (parent.get('id') or '').lower()
-                        if not any(x in parent_class + parent_id for x in ['sidebar', 'related', 'recommend', 'similar', 'also', 'other']):
-                            product_block = parent
-                            break
-            
-            # 2. Dacă nu găsește SKU, caută blocul care conține numele produsului
-            if not product_block and name:
-                name_words = [w for w in name.split() if len(w) > 3][:3]  # Primele 3 cuvinte importante
-                for word in name_words:
-                    for elem in soup.find_all(string=re.compile(re.escape(word), re.I)):
-                        parent = elem.find_parent(['main', 'article', 'div', 'section'])
-                        if parent:
-                            # Verifică că nu e din sidebar sau related
-                            parent_class = ' '.join(parent.get('class', [])).lower()
-                            parent_id = (parent.get('id') or '').lower()
-                            if not any(x in parent_class + parent_id for x in ['sidebar', 'related', 'recommend', 'similar', 'also', 'other']):
-                                product_block = parent
-                                break
-                    if product_block:
-                        break
-            
-            # 3. Fallback: blocuri comune de produs (Odoo)
-            if not product_block:
-                product_block = (
-                    soup.select_one("main.o_main_content") or
-                    soup.select_one("main") or
-                    soup.select_one("[class*='product-detail']") or
-                    soup.select_one(".product-detail") or
-                    soup.select_one("#product-detail") or
-                    soup.select_one("[class*='product-content']") or
-                    soup.select_one("article.product") or
-                    soup.select_one(".product") or
-                    soup.select_one("#product")
-                )
-            
-            # Căutăm imagini în blocul produsului sau în tot HTML-ul (fără a șterge noduri)
-            search_soup = product_block if product_block else soup
-            
-            # Exclude doar dacă imaginea e într-o secțiune clară de produse similare
-            def is_in_related_section(tag):
-                p = tag.find_parent(['section', 'div', 'aside'])
-                while p:
-                    cls = ' '.join(p.get('class', [])).lower()
-                    pid = (p.get('id') or '').lower()
-                    if any(x in cls + pid for x in ['similar', 'related', 'recommend', 'also-bought', 'other-products', 'sidebar', 'cross-sell']):
-                        return True
-                    p = p.find_parent(['section', 'div', 'aside'])
-                return False
-            
+            self.log("   🖼️ Descarc imagini (selecție manuală în popup dacă sunt mai multe)...", "INFO")
+            # Variantă simplă: toate imaginile din pagină cu /web/image/ – utilizatorul alege în popup
             img_selectors = selectors.get("images", ["img[src*='/web/image/product.template/']", "img[src*='/web/image/']"])
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
-            
             seen = set()
             for sel in img_selectors:
-                for img in search_soup.select(sel):
-                    if is_in_related_section(img):
-                        continue
+                for img in soup.select(sel):
                     src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
                     if src:
                         if not src.startswith("http"):
@@ -213,14 +152,9 @@ class MmsmobileScraper(BaseScraper):
                         if src not in seen:
                             seen.add(src)
                             img_urls.append(src)
-            
-            # Fallback: caută URL-uri de imagini în HTML brut (dacă nu sunt în <img>)
-            if not img_urls and search_soup:
-                raw = str(search_soup) if hasattr(search_soup, '__str__') else ""
-                if not raw and product_block:
-                    raw = str(product_block)
-                if not raw:
-                    raw = str(soup)
+            # Fallback: regex în HTML brut
+            if not img_urls:
+                raw = str(soup)
                 for pattern in [
                     r'["\'](https?://[^"\']*mmsmobile\.de[^"\']*/web/image[^"\']+\.(?:webp|jpg|jpeg|png|gif)[^"\']*)["\']',
                     r'["\'](/web/image[^"\']+\.(?:webp|jpg|jpeg|png|gif)[^"\']*)["\']',
@@ -233,13 +167,11 @@ class MmsmobileScraper(BaseScraper):
                             seen.add(u)
                             img_urls.append(u)
                     if img_urls:
-                        self.log("   ✓ Imagini găsite din HTML (fallback)", "INFO")
                         break
-            
-            # MMS: max 3 imagini per produs
-            img_urls = list(dict.fromkeys(img_urls))[:3]
+            # Max 10 imagini – utilizatorul alege în popup care să rămână
+            img_urls = list(dict.fromkeys(img_urls))[:10]
             if img_urls:
-                self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
+                self.log(f"   🔍 Total imagini găsite: {len(img_urls)} (selectează în popup)", "INFO")
             else:
                 self.log("   ⚠️ Nu am găsit imagini pe pagina produsului", "WARNING")
 

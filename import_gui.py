@@ -1497,6 +1497,8 @@ class ImportProduse:
                        variable=self.badge_preview_var, command=lambda: _toggle_badge_warning()).grid(row=3, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Convertește prețul EUR → RON", 
                        variable=self.convert_price_var).grid(row=4, column=0, sticky='w', padx=5, pady=2)
+        ttk.Checkbutton(frame_options, text="Selecție manuală imagini (popup când produsul are mai mult de 1 imagine – ex. MMS Mobile)", 
+                       variable=self.image_selection_var).grid(row=5, column=0, sticky='w', padx=5, pady=2)
         ttk.Checkbutton(frame_options, text="Extrage descriere în română", 
                        variable=self.extract_description_var).grid(row=6, column=0, sticky='w', padx=5, pady=2)
         
