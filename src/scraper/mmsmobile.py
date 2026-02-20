@@ -140,28 +140,6 @@ class MmsmobileScraper(BaseScraper):
             self.log("   🖼️ Descarc imagini MARI...", "INFO")
             # Găsește blocul produsului care conține SKU-ul SAU numele produsului
             product_block = None
-            product_gallery = None  # Galeria specifică a produsului
-            
-            # 0. Încearcă să găsească galeria produsului direct (Odoo)
-            gallery_selectors = [
-                "[class*='product-image']",
-                "[class*='product-gallery']",
-                "[class*='o_product_image']",
-                "[class*='product_images']",
-                ".carousel",
-                "[id*='product-image']",
-                "[id*='product-gallery']",
-            ]
-            for gallery_sel in gallery_selectors:
-                gallery_elem = soup.select_one(gallery_sel)
-                if gallery_elem:
-                    # Verifică că galeria conține SKU sau nume produs
-                    gallery_text = gallery_elem.get_text()
-                    if (sku_furnizor and sku_furnizor != "MMS-unknown" and sku_furnizor.upper() in gallery_text.upper()) or \
-                       (name and any(word.upper() in gallery_text.upper() for word in name.split()[:3] if len(word) > 3)):
-                        product_gallery = gallery_elem
-                        self.log("   ✓ Galerie produs găsită", "INFO")
-                        break
             
             # 1. Caută blocul care conține SKU-ul
             if sku_furnizor and sku_furnizor != "MMS-unknown":
@@ -205,98 +183,60 @@ class MmsmobileScraper(BaseScraper):
                     soup.select_one("#product")
                 )
             
-            # Exclude secțiuni de produse similare
-            if product_block:
-                for section in product_block.find_all(['section', 'div'], class_=re.compile(r'similar|related|recommend|also|other', re.I)):
-                    section.decompose()
-                for sidebar in product_block.find_all(['aside', 'div'], class_=re.compile(r'sidebar|related|recommend', re.I)):
-                    sidebar.decompose()
-                # Exclude și secțiuni care conțin "shop" sau "catalog" în clasă (alte produse)
-                for shop_section in product_block.find_all(['div', 'section'], class_=re.compile(r'shop|catalog|product-list|grid', re.I)):
-                    # Păstrează doar dacă conține SKU-ul sau numele produsului
-                    section_text = shop_section.get_text()
-                    if sku_furnizor and sku_furnizor != "MMS-unknown" and sku_furnizor not in section_text:
-                        if not (name and any(word in section_text for word in name.split()[:3] if len(word) > 3)):
-                            shop_section.decompose()
+            # Căutăm imagini în blocul produsului sau în tot HTML-ul (fără a șterge noduri)
+            search_soup = product_block if product_block else soup
             
-            # Prioritizează galeria produsului dacă există
-            search_soup = product_gallery if product_gallery else (product_block if product_block else soup)
+            # Exclude doar dacă imaginea e într-o secțiune clară de produse similare
+            def is_in_related_section(tag):
+                p = tag.find_parent(['section', 'div', 'aside'])
+                while p:
+                    cls = ' '.join(p.get('class', [])).lower()
+                    pid = (p.get('id') or '').lower()
+                    if any(x in cls + pid for x in ['similar', 'related', 'recommend', 'also-bought', 'other-products', 'sidebar', 'cross-sell']):
+                        return True
+                    p = p.find_parent(['section', 'div', 'aside'])
+                return False
             
-            # Doar selectori specifici pentru imagini produs (din config)
             img_selectors = selectors.get("images", ["img[src*='/web/image/product.template/']", "img[src*='/web/image/']"])
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
             
             seen = set()
-            name_words = [w for w in name.split() if len(w) > 3][:3] if name else []
-            
             for sel in img_selectors:
                 for img in search_soup.select(sel):
-                    # Dacă avem galerie produs, acceptă doar imagini din galerie
-                    if product_gallery:
-                        if img not in product_gallery.find_all('img'):
-                            continue
-                    
-                    # Verifică dacă imaginea este în blocul produsului corect
-                    img_parent = img.find_parent(['div', 'section', 'article', 'main', 'figure', 'a'])
-                    
-                    # Verifică dacă părintele imaginii conține SKU-ul sau numele produsului
-                    is_valid = False
-                    
-                    if img_parent:
-                        parent_text = img_parent.get_text()
-                        parent_classes = ' '.join(img_parent.get('class', [])).lower()
-                        parent_id = (img_parent.get('id') or '').lower()
-                        
-                        # Exclude secțiuni de produse similare
-                        if any(x in parent_classes + parent_id for x in ['similar', 'related', 'recommend', 'also', 'other', 'sidebar', 'shop', 'catalog', 'product-list', 'grid']):
-                            continue
-                        
-                        # Verifică dacă conține SKU-ul
-                        if sku_furnizor and sku_furnizor != "MMS-unknown" and sku_furnizor.upper() in parent_text.upper():
-                            is_valid = True
-                        # Sau dacă conține numele produsului (primele 2-3 cuvinte importante)
-                        elif name_words and any(word.upper() in parent_text.upper() for word in name_words):
-                            is_valid = True
-                    
-                    # Dacă nu am găsit părinte valid, verifică dacă e în product_block
-                    if not is_valid and product_block:
-                        # Verifică dacă imaginea este descendentă directă a product_block
-                        if img in product_block.find_all('img'):
-                            # Verifică că nu e într-o secțiune de produse similare
-                            img_container = img.find_parent(['div', 'section', 'article'])
-                            if img_container:
-                                container_classes = ' '.join(img_container.get('class', [])).lower()
-                                container_id = (img_container.get('id') or '').lower()
-                                if not any(x in container_classes + container_id for x in ['similar', 'related', 'recommend', 'also', 'other', 'sidebar', 'shop', 'catalog', 'product-list', 'grid']):
-                                    # Verifică că containerul conține SKU sau nume produs
-                                    container_text = img_container.get_text()
-                                    if (sku_furnizor and sku_furnizor != "MMS-unknown" and sku_furnizor.upper() in container_text.upper()) or \
-                                       (name_words and any(word.upper() in container_text.upper() for word in name_words)):
-                                        is_valid = True
-                    
-                    # Dacă nu avem product_block, acceptă doar dacă e în main sau article principal
-                    if not is_valid and not product_block:
-                        main_elem = soup.select_one('main') or soup.select_one('article')
-                        if main_elem and img in main_elem.find_all('img'):
-                            # Verifică că nu e într-o secțiune de produse similare
-                            img_container = img.find_parent(['div', 'section'])
-                            if img_container:
-                                container_classes = ' '.join(img_container.get('class', [])).lower()
-                                if not any(x in container_classes for x in ['similar', 'related', 'recommend', 'also', 'other', 'sidebar']):
-                                    is_valid = True
-                    
-                    if is_valid:
-                        src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
-                        if src:
-                            if not src.startswith("http"):
-                                src = base_url + src if src.startswith("/") else base_url + "/" + src
-                            if src not in seen:
-                                seen.add(src)
-                                img_urls.append(src)
-                                self.log(f"      ✓ Imagine validă găsită: {src[:80]}...", "INFO")
+                    if is_in_related_section(img):
+                        continue
+                    src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                    if src:
+                        if not src.startswith("http"):
+                            src = base_url + src if src.startswith("/") else base_url + "/" + src
+                        if src not in seen:
+                            seen.add(src)
+                            img_urls.append(src)
             
-            # MMS: max 3 imagini per produs (evită imagini de la alte produse)
+            # Fallback: caută URL-uri de imagini în HTML brut (dacă nu sunt în <img>)
+            if not img_urls and search_soup:
+                raw = str(search_soup) if hasattr(search_soup, '__str__') else ""
+                if not raw and product_block:
+                    raw = str(product_block)
+                if not raw:
+                    raw = str(soup)
+                for pattern in [
+                    r'["\'](https?://[^"\']*mmsmobile\.de[^"\']*/web/image[^"\']+\.(?:webp|jpg|jpeg|png|gif)[^"\']*)["\']',
+                    r'["\'](/web/image[^"\']+\.(?:webp|jpg|jpeg|png|gif)[^"\']*)["\']',
+                ]:
+                    for m in re.finditer(pattern, raw, re.I):
+                        u = m.group(1)
+                        if not u.startswith("http"):
+                            u = base_url.rstrip("/") + ("/" if not u.startswith("/") else "") + u
+                        if u not in seen:
+                            seen.add(u)
+                            img_urls.append(u)
+                    if img_urls:
+                        self.log("   ✓ Imagini găsite din HTML (fallback)", "INFO")
+                        break
+            
+            # MMS: max 3 imagini per produs
             img_urls = list(dict.fromkeys(img_urls))[:3]
             if img_urls:
                 self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
