@@ -223,20 +223,17 @@ class MpsmobileScraper(BaseScraper):
                         for part in srcset.split(","):
                             _add(_normalize(part))
 
-            # 4. Fallback: doar în zona produsului, max 3 imagini (evită imagini de la alte produse)
+            # 4. Fallback: caută /data/product/images/ în tot HTML (inclusiv scripturi – galeria e adesea în JS)
+            # Limităm la 4 URL-uri ca să luăm imaginile produsului (primele din pagină), nu de la alte produse
             n_before_fallback = len(img_urls)
-            product_container = (
-                soup.select_one("main") or soup.select_one("[class*='product-detail']")
-                or soup.select_one(".product") or soup.select_one("#product")
-                or soup.select_one("[class*='product-info']")
-            )
-            raw_html = str(product_container) if product_container else str(soup)
-            max_from_fallback = 3
+            raw_html = str(soup)
+            max_from_fallback = 4
             fallback_count = 0
             for pattern in [
                 r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
                 r'"(https?://[^"]*mpsmobile\.de/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
                 r'"(/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
+                r"'(/data/product/images/[^']+\.(?:jpg|jpeg|png|webp|gif)[^']*)'",
             ]:
                 if fallback_count >= max_from_fallback:
                     break
