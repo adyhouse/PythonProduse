@@ -115,7 +115,7 @@ class MobilepartsScraper(BaseScraper):
                     continue
                 raise
         if last_error is not None:
-            # Fallback: Playwright (browser real) – site-ul dă 403 la requests
+            # Fallback: Playwright (browser real) – site-ul dă 403 la requests și afișează „security verification”
             try:
                 from playwright.sync_api import sync_playwright
                 self.log("   🌐 Încerc cu browser (Playwright)...", "INFO")
@@ -123,7 +123,24 @@ class MobilepartsScraper(BaseScraper):
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
                     page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+                    # Așteptăm să treacă verificarea anti-bot („Performing security verification”)
+                    self.log("   ⏳ Aștept verificare securitate site...", "INFO")
+                    try:
+                        page.wait_for_function(
+                            "!document.body.innerText.includes('Performing security verification')",
+                            timeout=25000,
+                        )
+                    except Exception:
+                        page.wait_for_timeout(12000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
                     html = page.content()
+                    # Dacă tot e pagina de verificare, mai așteptăm o dată
+                    if "Performing security verification" in html or "security verification" in html.lower():
+                        page.wait_for_timeout(10000)
+                        html = page.content()
                     browser.close()
                 soup = BeautifulSoup(html, "html.parser")
                 page_text = soup.get_text(separator="\n")
