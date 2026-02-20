@@ -168,11 +168,21 @@ class MpsmobileScraper(BaseScraper):
                 u = url.lower()
                 return any(ext in u for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])
 
+            def _is_thumbnail_or_small(url):
+                """Exclude thumbnail-uri și variante mici – păstrăm doar imaginile mari."""
+                if not url:
+                    return True
+                u = url.lower()
+                return any(x in u for x in [
+                    "thumbnail", "/thumb/", "/thumbs/", "/small/", "/mini/", "/tiny/",
+                    "_thumb", "-thumb", "_s.", "-s.", "small_image", "preview", "/resize/"
+                ])
+
             seen = set()
 
             def _add(u):
                 u = _canonical_mps_image_url(u) if u else None
-                if u and u not in seen and _is_image_url(u):
+                if u and u not in seen and _is_image_url(u) and not _is_thumbnail_or_small(u):
                     seen.add(u)
                     img_urls.append(u)
 
