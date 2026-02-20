@@ -184,6 +184,10 @@ class MobilepartsScraper(BaseScraper):
                     break
         if not name:
             name = "Produs MobileParts"
+        # Curățare: fără prefix SKU și fără " - Mobileparts.shop" la final
+        name = re.sub(r"^\d+-\d+\s*-\s*", "", name)
+        name = re.sub(r"\s*-\s*Mobileparts?\.shop\s*$", "", name, flags=re.I)
+        name = name.strip() or "Produs MobileParts"
 
         price = 0.0
         for sel in selectors.get("price", [".price", ".product-price", "span.price", "[data-price]", "[class*='price']", "[itemprop=price]"]):
