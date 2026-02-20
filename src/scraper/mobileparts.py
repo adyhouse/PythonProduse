@@ -80,6 +80,7 @@ class MobilepartsScraper(BaseScraper):
         # Session + homepage apoi produs; la 403 încercăm header-e minime
         parsed = urlparse(product_url)
         site_root = f"{parsed.scheme}://{parsed.netloc}"
+        base_url = site_root  # folosim același domeniu ca în URL (ex. www.mobileparts.shop)
         session = requests.Session()
         session.headers.update(self._headers(referer=site_root + "/"))
         try:
@@ -130,7 +131,7 @@ class MobilepartsScraper(BaseScraper):
             except ImportError:
                 self.log("   ✗ Site-ul MobileParts blochează accesul (403). Pentru a folosi acest furnizor:", "ERROR")
                 self.log("      1. În terminal: pip install playwright", "ERROR")
-                self.log("      2. Apoi: playwright install chromium", "ERROR")
+                self.log("      2. Apoi: python -m playwright install chromium", "ERROR")
                 self.log("   După instalare rulează din nou procesarea.", "ERROR")
                 return None
             except Exception as e:
@@ -140,16 +141,23 @@ class MobilepartsScraper(BaseScraper):
         selectors = self.config.get("selectors", {})
 
         name = ""
-        for sel in selectors.get("name", ["h1", ".product-title", ".product-name", "[itemprop=name]"]):
+        for sel in selectors.get("name", ["h1", ".product-title", ".product-name", "[itemprop=name]", "h1[class*='title']", "[class*='product'] h1", ".article-title", ".page-title"]):
             el = soup.select_one(sel)
             if el and el.get_text(strip=True):
                 name = el.get_text(strip=True)
                 break
         if not name:
+            # Fallback: din URL slug (ex. battery-original-apple-iphone-air)
+            path = parsed.path.strip("/").split("/")
+            for part in reversed(path):
+                if part and "article" not in part.lower() and "parts" not in part.lower() and len(part) > 4:
+                    name = part.replace("-", " ").title()
+                    break
+        if not name:
             name = "Produs MobileParts"
 
         price = 0.0
-        for sel in selectors.get("price", [".price", ".product-price", "span.price", "[data-price]"]):
+        for sel in selectors.get("price", [".price", ".product-price", "span.price", "[data-price]", "[class*='price']", "[itemprop=price]"]):
             el = soup.select_one(sel)
             if el:
                 txt = el.get_text(strip=True)
@@ -174,15 +182,27 @@ class MobilepartsScraper(BaseScraper):
 
         sku_furnizor = ""
         ean_real = ""
-        for sel in selectors.get("sku", [".sku", ".product-sku", "[itemprop=sku]"]):
+        for sel in selectors.get("sku", [".sku", ".product-sku", "[itemprop=sku]", "[class*='sku']", "[class*='article']", "[data-sku]"]):
             el = soup.select_one(sel)
             if el:
-                sku_furnizor = el.get_text(strip=True) or el.get("content") or ""
-                if sku_furnizor and re.match(r"^[\dA-Za-z-]+$", sku_furnizor):
+                sku_furnizor = el.get_text(strip=True) or el.get("content") or el.get("data-sku") or ""
+                sku_furnizor = str(sku_furnizor).strip()
+                if sku_furnizor and re.match(r"^[\dA-Za-z-]+$", sku_furnizor) and len(sku_furnizor) >= 4:
                     ean_real = sku_furnizor
                     break
         if not sku_furnizor:
-            sku_furnizor = re.sub(r"[^a-zA-Z0-9]", "", product_url[-40:]) or "MP-unknown"
+            # Din URL: /article/parts/661-55235/ sau /parts/661-55235/
+            m = re.search(r"/parts?/([0-9]+-[0-9]+)", parsed.path, re.I)
+            if m:
+                sku_furnizor = m.group(1)
+                ean_real = sku_furnizor
+            else:
+                m = re.search(r"/([0-9]{3,}-[0-9]{2,})[/?]", product_url)
+                if m:
+                    sku_furnizor = m.group(1)
+                    ean_real = sku_furnizor
+                else:
+                    sku_furnizor = re.sub(r"[^a-zA-Z0-9]", "", product_url[-40:]) or "MP-unknown"
 
         img_urls = []
         if not self.skip_images:

@@ -128,8 +128,10 @@ Site-ul MobileParts blochează cereri obișnuite (403). Pentru a folosi acest fu
 
 ```bash
 pip install playwright
-playwright install chromium
+python -m playwright install chromium
 ```
+
+(Pe Windows, dacă `playwright` nu e recunoscut ca comandă, folosește `python -m playwright install chromium`.)
 
 După instalare, la procesare se va folosi automat un browser headless și paginile se vor încărca.
 
