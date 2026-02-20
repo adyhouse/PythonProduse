@@ -1272,7 +1272,7 @@ class ImageSelectionWindow:
             var = tk.BooleanVar(value=True)
             self.checkboxes.append(var)
 
-            def toggle_preview(idx=idx):
+            def toggle_preview(idx=idx, var=var):
                 if var.get():
                     self.selected_indices.add(idx)
                 else:
