@@ -80,12 +80,49 @@ class ComponentidigitaliScraper(BaseScraper):
 
         selectors = self.config.get("selectors", {})
 
+        # Cuvinte din meniu/navigare de ignorat (nu sunt nume produs)
+        skip_titles = {"servizi", "contatti", "shop", "home", "catalogo", "account", "carrello", "login", "registrati", "ricambi", "smartphone", "accessori", "offerte"}
+        def is_valid_name(txt):
+            t = (txt or "").strip()
+            if len(t) < 4:
+                return False
+            if t.lower() in skip_titles:
+                return False
+            return True
+
         name = ""
-        for sel in selectors.get("name", ["h1", "h2", "h3", ".product-title"]):
+        # Încearcă mai întâi titluri din zona produs (main, product, page-content)
+        for sel in [".product-title", "h1.page-title", "main h1", "[class*='product'] h1", "[class*='product-detail'] h1", ".product-name", "h1"]:
             el = soup.select_one(sel)
             if el and el.get_text(strip=True):
-                name = el.get_text(strip=True)
-                break
+                cand = el.get_text(strip=True)
+                if is_valid_name(cand):
+                    name = cand
+                    break
+        if not name:
+            for sel in selectors.get("name", ["h2", "h3", ".product-title", "h1"]):
+                for el in soup.select(sel):
+                    if not el or not el.get_text(strip=True):
+                        continue
+                    cand = el.get_text(strip=True)
+                    if not is_valid_name(cand):
+                        continue
+                    # Evită titluri din nav/menu/header
+                    in_nav = False
+                    for parent in el.parents:
+                        if parent.name in ("nav", "header"):
+                            in_nav = True
+                            break
+                        cls = (parent.get("class") or [])
+                        if any("menu" in (c or "").lower() or "nav" in (c or "").lower() for c in cls):
+                            in_nav = True
+                            break
+                    if in_nav:
+                        continue
+                    if len(cand) > len(name or ""):
+                        name = cand
+                if name:
+                    break
         if not name:
             name = "Produs Componenti Digitali"
 
