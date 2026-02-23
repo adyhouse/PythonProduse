@@ -146,6 +146,43 @@ class BaseScraper(ABC):
                     return (cells[i + 1].get_text(strip=True) or "").strip()
         return ""
 
+    def _login_odoo_json_rpc(self, base_url: str, username: str, password: str) -> bool:
+        """
+        Login Odoo prin JSON-RPC la /web/session/authenticate.
+        Returnează True doar dacă răspunsul conține result.uid sau result.session_id.
+        """
+        import json
+        url = base_url.rstrip("/") + "/web/session/authenticate"
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "db": "",  # unele instanțe cer db; gol = default
+                "login": username,
+                "password": password,
+            },
+            "id": None,
+        }
+        headers = {**self._headers(), "Content-Type": "application/json"}
+        try:
+            self.log("   📤 Login Odoo (JSON-RPC /web/session/authenticate)...", "INFO")
+            r = self.session.post(url, json=payload, headers=headers, timeout=15)
+            self.log(f"   📥 Răspuns authenticate (status: {r.status_code})", "INFO")
+            if r.status_code != 200:
+                return False
+            data = r.json()
+            if data.get("error"):
+                self.log(f"   ⚠️ Odoo error: {data.get('error', {}).get('data', {}).get('message', data.get('error'))}", "WARNING")
+                return False
+            result = data.get("result") or {}
+            if result.get("uid") or result.get("session_id"):
+                self.log("   ✓ Login reușit (sesiune Odoo)", "SUCCESS")
+                return True
+            return False
+        except Exception as e:
+            self.log(f"   ⚠️ Eroare login JSON-RPC: {e}", "WARNING")
+            return False
+
     def _login_if_required(self) -> bool:
         """
         Face login dacă este necesar (config.login.required = true).
@@ -219,26 +256,33 @@ class BaseScraper(ABC):
         try:
             self.log(f"   🔐 Încearcă login la: {login_url}", "INFO")
             self.session = requests.Session()
-            # Obține pagina de login pentru CSRF token (dacă e necesar)
+            # Obține pagina de login (cookie de sesiune, eventual CSRF)
             login_page = self.session.get(login_url, headers=self._headers(), timeout=15)
             login_page.raise_for_status()
             self.log(f"   ✓ Pagină login accesată (status: {login_page.status_code})", "INFO")
-            
-            # Încearcă login-ul (poate necesita CSRF token sau alte câmpuri)
+
+            # Odoo: login-ul se face prin JSON-RPC la /web/session/authenticate, nu prin formular HTML
+            if "/web/login" in login_url:
+                if self._login_odoo_json_rpc(base_url, username, password):
+                    return True
+                self.log("   ⚠️ Login JSON-RPC eșuat, încerc cu formularul HTML...", "INFO")
+
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(login_page.content, "html.parser")
-            
-            # Pentru Odoo (/web/login), câmpurile sunt de obicei "login" și "password"
-            # Caută formularul de login
-            login_form = soup.find("form") or soup.find("form", {"id": re.compile(r"login|auth", re.I)})
-            
+
+            # Găsește formularul care conține câmpuri login ȘI password (nu primul form din pagină – poate fi search/nav)
+            login_form = None
+            for form in soup.find_all("form"):
+                names = [inp.get("name", "").lower() for inp in form.find_all("input") if inp.get("name")]
+                has_login = any("login" in n or "user" in n for n in names if "password" not in n and "csrf" not in n)
+                has_password = any("password" in n for n in names)
+                if has_login and has_password:
+                    login_form = form
+                    break
             if not login_form:
-                # Încearcă să găsească orice formular
-                login_form = soup.find("form")
-            
+                login_form = soup.find("form", {"id": re.compile(r"login|auth", re.I)}) or soup.find("form")
+
             login_data = {}
-            
-            # Extrage toate input-urile din formular (inclusiv hidden pentru CSRF)
             if login_form:
                 for inp in login_form.find_all("input"):
                     name = inp.get("name")
@@ -246,100 +290,63 @@ class BaseScraper(ABC):
                     inp_type = inp.get("type", "").lower()
                     if name and inp_type != "submit":
                         login_data[name] = value
-                self.log(f"   📋 Câmpuri formular găsite: {list(login_data.keys())}", "INFO")
-            else:
-                self.log("   ⚠️ Formular de login negăsit în HTML", "WARNING")
-            
-            # Setează username și password
-            # Odoo folosește de obicei "login" pentru username
-            login_field = None
-            for key in login_data.keys():
-                if "login" in key.lower() and "password" not in key.lower() and "csrf" not in key.lower():
-                    login_field = key
-                    break
-            
+                self.log(f"   📋 Câmpuri formular: {list(login_data.keys())}", "INFO")
+
+            login_field = next((k for k in login_data if "login" in k.lower() and "password" not in k.lower() and "csrf" not in k.lower()), None)
             if login_field:
                 login_data[login_field] = username
-                self.log(f"   ✓ Username setat în câmpul '{login_field}'", "INFO")
             else:
-                # Încearcă variante comune
-                for field_name in ["login", "username", "email", "user"]:
-                    if field_name not in login_data:
-                        login_data[field_name] = username
-                        login_field = field_name
-                        break
-                if login_field:
-                    self.log(f"   ✓ Username setat în câmpul '{login_field}' (fallback)", "INFO")
-                else:
-                    login_data["login"] = username
-                    self.log("   ✓ Username setat în 'login' (default)", "INFO")
-            
-            # Setează password
-            password_field = None
-            for key in login_data.keys():
-                if "password" in key.lower():
-                    password_field = key
-                    break
-            
+                login_data.setdefault("login", username)
+            password_field = next((k for k in login_data if "password" in k.lower()), None)
             if password_field:
                 login_data[password_field] = password
-                self.log(f"   ✓ Password setat în câmpul '{password_field}'", "INFO")
             else:
-                login_data["password"] = password
-                self.log("   ✓ Password setat în 'password' (default)", "INFO")
-            
-            # Obține action URL din formular (dacă există)
+                login_data.setdefault("password", password)
+
             action_url = login_url
             if login_form and login_form.get("action"):
-                action = login_form.get("action")
-                if action.startswith("http"):
-                    action_url = action
-                elif action.startswith("/"):
-                    action_url = base_url + action
-                elif action:
-                    action_url = login_url.rstrip("/") + "/" + action
-                self.log(f"   📍 Action URL: {action_url}", "INFO")
-            
-            # Trimite request-ul de login
-            self.log(f"   📤 Trimite date login...", "INFO")
+                action = (login_form.get("action") or "").strip()
+                if action and action != "#":
+                    if action.startswith("http"):
+                        action_url = action
+                    elif action.startswith("/"):
+                        action_url = base_url + action
+                    else:
+                        action_url = (login_url.rstrip("/") + "/" + action.lstrip("/"))
+            self.log(f"   📍 POST la: {action_url}", "INFO")
+
             response = self.session.post(action_url, data=login_data, headers=self._headers(), timeout=15, allow_redirects=False)
             self.log(f"   📥 Răspuns login (status: {response.status_code})", "INFO")
-            
-            # Verifică dacă login-ul a reușit (redirect sau mesaj de succes)
-            # Odoo de obicei redirectează la /web sau /web#home după login reușit
+
             location = response.headers.get("Location", "")
-            response_text_lower = response.text.lower()
-            
-            success_indicators = [
-                response.status_code == 302,
-                "/web" in location,
-                "/web#" in location,
-                "logout" in response_text_lower,
-                "my account" in response_text_lower,
-                "dashboard" in response_text_lower,
-            ]
-            
-            if any(success_indicators):
-                # Dacă e redirect, urmează redirect-ul
-                if response.status_code == 302 and location:
-                    if not location.startswith("http"):
-                        location = base_url + location if location.startswith("/") else base_url + "/" + location
-                    self.log(f"   🔄 Urmează redirect la: {location}", "INFO")
-                    self.session.get(location, headers=self._headers(), timeout=15)
+
+            # Succes doar la redirect 302 către /web (sau răspuns JSON cu uid) – nu considera 400 ca succes
+            if response.status_code == 302 and location and ("/web" in location or "/web#" in location):
+                if not location.startswith("http"):
+                    location = base_url + location if location.startswith("/") else base_url + "/" + location
+                self.log(f"   🔄 Urmează redirect: {location[:60]}...", "INFO")
+                self.session.get(location, headers=self._headers(), timeout=15)
                 self.log("   ✓ Login reușit", "SUCCESS")
                 return True
-            else:
-                # Salvează HTML-ul răspunsului pentru debugging
-                debug_file = Path(script_dir) / "logs" / f"login_failed_{self.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-                debug_file.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    with open(debug_file, 'w', encoding='utf-8') as f:
-                        f.write(response.text)
-                    self.log(f"   📝 Răspuns login salvat pentru debugging: {debug_file}", "INFO")
-                except:
-                    pass
-                self.log(f"   ⚠️ Login eșuat - verifică credențiale în .env (status: {response.status_code}, location: {location[:50] if location else 'none'})", "WARNING")
-                return False
+
+            # Verifică răspuns JSON (unele Odoo răspund cu 200 + JSON)
+            try:
+                data = response.json()
+                if data.get("result") and (data["result"].get("uid") or data["result"].get("session_id")):
+                    self.log("   ✓ Login reușit (JSON)", "SUCCESS")
+                    return True
+            except Exception:
+                pass
+
+            debug_file = Path(script_dir) / "logs" / f"login_failed_{self.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            debug_file.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                debug_file.write_text(response.text, encoding="utf-8")
+                self.log(f"   📝 Răspuns salvat: {debug_file}", "INFO")
+            except Exception:
+                pass
+            self.log(f"   ⚠️ Login eșuat – verifică credențiale (status: {response.status_code})", "WARNING")
+            return False
         except Exception as e:
             import traceback
             self.log(f"   ⚠️ Eroare login: {e}", "WARNING")
