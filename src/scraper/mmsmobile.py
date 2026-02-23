@@ -26,20 +26,23 @@ class MmsmobileScraper(BaseScraper):
         }
 
     def _enlarge_odoo_image_url(self, url: str) -> str:
-        """Cere imagine mare la Odoo: adaugă sau înlocuiește parametrul size (ex. 1024x1024)."""
+        """Cere imagine mare la Odoo: în path Odoo folosește image_128, image_256, image_1920."""
         if "/web/image/" not in url:
             return url
-        # Elimină parametri de dimensiune mici (ex. image_256) din path și adaugă size mare în query
-        size_param = "1024x1024"
+        # Odoo: dimensiunea e în numele câmpului din path (image_128 → thumbnail, image_1920 → mare)
+        for small in ("image_128", "image_256", "image_512", "image_64"):
+            if small in url:
+                return url.replace(small, "image_1920", 1)
+        # Dacă există doar "image" fără _128, adaugă ?size=1024x1024
         if "?" in url:
-            # Elimină size= existent dacă e mic
             from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
             parsed = urlparse(url)
             qs = parse_qs(parsed.query)
-            qs["size"] = [size_param]
-            new_query = urlencode(qs, doseq=True)
-            return urlunparse(parsed._replace(query=new_query))
-        return url.rstrip("/") + "?size=" + size_param
+            qs["size"] = ["1024x1024"]
+            return urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+        if "/image" in url and "image_1920" not in url:
+            return url.rstrip("/") + "?size=1024x1024"
+        return url
 
     def _find_product_url(self, sku_or_query: str) -> Optional[str]:
         base_url = self.config.get("base_url", "https://www.mmsmobile.de").rstrip("/")
