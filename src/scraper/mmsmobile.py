@@ -25,6 +25,22 @@ class MmsmobileScraper(BaseScraper):
             "Referer": self.config.get("base_url", "https://www.mmsmobile.de") + "/",
         }
 
+    def _enlarge_odoo_image_url(self, url: str) -> str:
+        """Cere imagine mare la Odoo: adaugă sau înlocuiește parametrul size (ex. 1024x1024)."""
+        if "/web/image/" not in url:
+            return url
+        # Elimină parametri de dimensiune mici (ex. image_256) din path și adaugă size mare în query
+        size_param = "1024x1024"
+        if "?" in url:
+            # Elimină size= existent dacă e mic
+            from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+            parsed = urlparse(url)
+            qs = parse_qs(parsed.query)
+            qs["size"] = [size_param]
+            new_query = urlencode(qs, doseq=True)
+            return urlunparse(parsed._replace(query=new_query))
+        return url.rstrip("/") + "?size=" + size_param
+
     def _find_product_url(self, sku_or_query: str) -> Optional[str]:
         base_url = self.config.get("base_url", "https://www.mmsmobile.de").rstrip("/")
         lang = self.config.get("default_language", "en")
@@ -157,8 +173,8 @@ class MmsmobileScraper(BaseScraper):
 
         img_urls = []
         if not self.skip_images:
-            self.log("   🖼️ Descarc imagini (selecție manuală în popup dacă sunt mai multe)...", "INFO")
-            # Variantă simplă: toate imaginile din pagină cu /web/image/ – utilizatorul alege în popup
+            self.log("   🖼️ Descarc imagini MARI (Odoo), selecție în popup – recomandat 4–5 poze...", "INFO")
+            # Toate imaginile din pagină cu /web/image/ – cerem dimensiune mare (Odoo acceptă size=...)
             img_selectors = selectors.get("images", ["img[src*='/web/image/product.template/']", "img[src*='/web/image/']"])
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
@@ -171,7 +187,7 @@ class MmsmobileScraper(BaseScraper):
                             src = base_url + src if src.startswith("/") else base_url + "/" + src
                         if src not in seen:
                             seen.add(src)
-                            img_urls.append(src)
+                            img_urls.append(self._enlarge_odoo_image_url(src))
             # Fallback: regex în HTML brut
             if not img_urls:
                 raw = str(soup)
@@ -185,13 +201,13 @@ class MmsmobileScraper(BaseScraper):
                             u = base_url.rstrip("/") + ("/" if not u.startswith("/") else "") + u
                         if u not in seen:
                             seen.add(u)
-                            img_urls.append(u)
+                            img_urls.append(self._enlarge_odoo_image_url(u))
                     if img_urls:
                         break
-            # Max 10 imagini – utilizatorul alege în popup care să rămână
+            # Păstrăm până la 10 imagini – în popup utilizatorul alege 4–5 (dimensiune + KB afișate)
             img_urls = list(dict.fromkeys(img_urls))[:10]
             if img_urls:
-                self.log(f"   🔍 Total imagini găsite: {len(img_urls)} (selectează în popup)", "INFO")
+                self.log(f"   🔍 Total imagini găsite: {len(img_urls)} (selectează 4–5 în popup – se afișează dimensiunea și KB)", "INFO")
             else:
                 self.log("   ⚠️ Nu am găsit imagini pe pagina produsului", "WARNING")
 

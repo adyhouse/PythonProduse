@@ -397,11 +397,28 @@ class BaseScraper(ABC):
                 name = f"{product_id_clean}_{idx}.{ext}"
                 path = images_dir / name
                 path.write_bytes(r.content)
-                size_mb = len(r.content) / (1024 * 1024)
-                out.append(
-                    {"src": url, "local_path": str(path), "name": name, "size": f"{size_mb:.2f} MB"}
-                )
-                self.log(f"      📷 [{idx}] ✓ {name}", "SUCCESS")
+                size_bytes = len(r.content)
+                size_mb = size_bytes / (1024 * 1024)
+                size_kb = round(size_bytes / 1024)
+                width, height = None, None
+                try:
+                    from PIL import Image
+                    with Image.open(path) as im:
+                        width, height = im.size
+                except Exception:
+                    pass
+                entry = {
+                    "src": url,
+                    "local_path": str(path),
+                    "name": name,
+                    "size": f"{size_mb:.2f} MB",
+                    "size_kb": size_kb,
+                    "width": width,
+                    "height": height,
+                }
+                out.append(entry)
+                dims = f" {width}×{height}" if (width and height) else ""
+                self.log(f"      📷 [{idx}] ✓ {name} ({size_kb} KB{dims})", "SUCCESS")
             except Exception as e:
                 self.log(f"      ⚠️ [{idx}] Eroare: {e}", "WARNING")
         return out

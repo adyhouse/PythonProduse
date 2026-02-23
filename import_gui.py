@@ -1305,6 +1305,23 @@ class ImageSelectionWindow:
             name = img_item.get('name', Path(img_path).name) if isinstance(img_item, dict) else Path(img_path).name
             tk.Label(frame, text=name[:30] + ("..." if len(name) > 30 else ""), 
                     font=('', 8), bg='white', wraplength=200).pack(padx=5, pady=2)
+            # Dimensiune (W×H) și mărime (KB)
+            size_kb = img_item.get('size_kb') if isinstance(img_item, dict) else None
+            w, h = (img_item.get('width'), img_item.get('height')) if isinstance(img_item, dict) else (None, None)
+            if size_kb is None and Path(img_path).exists():
+                try:
+                    img = Image.open(img_path)
+                    w, h = img.size
+                    size_kb = round(Path(img_path).stat().st_size / 1024)
+                except Exception:
+                    pass
+            info_parts = []
+            if w is not None and h is not None:
+                info_parts.append(f"{w}×{h}")
+            if size_kb is not None:
+                info_parts.append(f"{size_kb} KB")
+            if info_parts:
+                tk.Label(frame, text=" • ".join(info_parts), font=('', 8), bg='white', fg='#555').pack(padx=5, pady=0)
 
         images_frame.grid_columnconfigure(0, weight=1)
         images_frame.grid_columnconfigure(1, weight=1)
