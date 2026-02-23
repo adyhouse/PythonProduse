@@ -70,10 +70,12 @@ class MmsmobileScraper(BaseScraper):
                 return None
 
         try:
-            # Folosește session dacă există (după login), altfel requests normal
+            # Folosește session dacă există (după login), altfel requests normal – doar cu sesiune autentificată se vede prețul
             if self.session:
+                self.log("   📄 Descarc pagina produsului cu sesiune autentificată (zona client)...", "INFO")
                 r = self.session.get(product_url, headers=self._headers(), timeout=30)
             else:
+                self.log("   📄 Descarc pagina produsului (fără login – prețul poate fi 0)...", "INFO")
                 r = requests.get(product_url, headers=self._headers(), timeout=30)
             r.raise_for_status()
             soup = BeautifulSoup(r.content, "html.parser")
@@ -110,6 +112,24 @@ class MmsmobileScraper(BaseScraper):
                         pass
                     if price > 0:
                         break
+        # Fallback: preț din tabel (Odoo – doar pentru clienți autentificați)
+        if price <= 0:
+            for header in ("Price", "List Price", "Preis", "Verkaufspreis", "Sales Price"):
+                raw = self._table_value_by_header(soup, header)
+                if raw:
+                    m = re.search(r"[\d.,]+", raw.replace(",", "."))
+                    if m:
+                        try:
+                            price = float(m.group(0).replace(",", "."))
+                            if price > 0:
+                                self.log(f"   💶 Preț extras din tabel (header: {header})", "INFO")
+                                break
+                        except ValueError:
+                            pass
+        if price > 0:
+            self.log(f"   💶 Preț: {price:.2f} EUR", "INFO")
+        else:
+            self.log("   ⚠️ Preț: 0 – doar zona client (după login) afișează prețul; verifică autentificarea.", "WARNING")
 
         description = ""
         for sel in selectors.get("description", [

@@ -11,6 +11,38 @@ from bs4 import BeautifulSoup
 from .base import BaseScraper
 
 
+def _parse_price_str(s: str) -> Optional[float]:
+    """Parsează string preț: acceptă 12,50 / 12.50 / 1.234,56 / 1,234.56."""
+    if not s or not s.strip():
+        return None
+    s = s.strip().replace("\u00a0", " ")
+    m = re.search(r"[\d.,]+", s)
+    if not m:
+        return None
+    raw = m.group(0)
+    if "," in raw and "." in raw:
+        # Un singur separator e zecimal: cel de la sfârșit
+        if raw.rindex(",") > raw.rindex("."):
+            # European: 1.234,56
+            raw = raw.replace(".", "").replace(",", ".")
+        else:
+            # US: 1,234.56
+            raw = raw.replace(",", "")
+    elif "," in raw:
+        raw = raw.replace(",", ".")
+    elif "." in raw:
+        # Doar punct: 12.50 (zecimal) sau 1.234 (mii). Dacă după ultimul punct sunt 2-3 cifre = zecimal
+        parts = raw.split(".")
+        if len(parts) == 2 and len(parts[1]) in (2, 3):
+            pass  # 12.50 -> 12.50
+        else:
+            raw = raw.replace(".", "")  # 1.234 -> 1234
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 class ComponentidigitaliScraper(BaseScraper):
     def _headers(self) -> Dict[str, str]:
         return {
@@ -131,21 +163,20 @@ class ComponentidigitaliScraper(BaseScraper):
             el = soup.select_one(sel)
             if el:
                 txt = el.get_text(strip=True)
-                m = re.search(r"[\d.,]+", txt.replace(",", "."))
-                if m:
-                    try:
-                        price = float(m.group(0).replace(".", "").replace(",", ".") or m.group(0))
-                    except ValueError:
-                        pass
-                    if price > 0:
-                        break
+                parsed = _parse_price_str(txt)
+                if parsed is not None and parsed > 0:
+                    price = parsed
+                    break
         if price == 0.0:
             m = re.search(r"€\s*([\d.,]+)", page_text)
             if m:
-                try:
-                    price = float(m.group(1).replace(",", "."))
-                except ValueError:
-                    pass
+                parsed = _parse_price_str(m.group(1))
+                if parsed is not None and parsed > 0:
+                    price = parsed
+        if price > 0:
+            self.log(f"   💶 Preț extras: {price:.2f} EUR", "INFO")
+        else:
+            self.log("   ⚠️ Preț negăsit – se folosește 0.00 EUR", "WARNING")
 
         description = ""
         for sel in selectors.get("description", [".product-description", ".description", "[itemprop=description]"]):

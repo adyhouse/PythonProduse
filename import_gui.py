@@ -3842,11 +3842,9 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     # EAN / SKU – apostrof în față ca în export WebGSM (Excel păstrează cifrele ca text, fără formatare)
                     ean_text = ("'" + ean_value) if (ean_value and ean_value.isdigit()) else (ean_value or '')
 
-                    # SKU furnizor: cod furnizor (ex. 107082130502) – același format cu apostrof
+                    # SKU furnizor: cod furnizor (ex. 107082130502) – fără apostrof
                     sku_furnizor_raw = product.get('sku_furnizor', product.get('sku', ''))
                     sku_furnizor = str(sku_furnizor_raw).strip() if sku_furnizor_raw else ''
-                    if sku_furnizor and re.sub(r'\D', '', sku_furnizor) == sku_furnizor and len(sku_furnizor) >= 8:
-                        sku_furnizor = "'" + sku_furnizor
 
                     # Categorii: Titlu > URL slug > Descriere > Taguri; folosit și pentru garanție
                     manual_code = product.get('manual_category_code')
