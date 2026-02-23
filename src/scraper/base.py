@@ -146,10 +146,10 @@ class BaseScraper(ABC):
                     return (cells[i + 1].get_text(strip=True) or "").strip()
         return ""
 
-    def _login_odoo_json_rpc(self, base_url: str, username: str, password: str) -> bool:
+    def _login_odoo_json_rpc(self, base_url: str, username: str, password: str, db: str = "") -> bool:
         """
         Login Odoo prin JSON-RPC la /web/session/authenticate.
-        Returnează True doar dacă răspunsul conține result.uid sau result.session_id.
+        db: nume baza de date (din formularul de login); gol = default, unele instanțe cer explicit.
         """
         import json
         url = base_url.rstrip("/") + "/web/session/authenticate"
@@ -157,7 +157,7 @@ class BaseScraper(ABC):
             "jsonrpc": "2.0",
             "method": "call",
             "params": {
-                "db": "",  # unele instanțe cer db; gol = default
+                "db": db or "",
                 "login": username,
                 "password": password,
             },
@@ -261,14 +261,23 @@ class BaseScraper(ABC):
             login_page.raise_for_status()
             self.log(f"   ✓ Pagină login accesată (status: {login_page.status_code})", "INFO")
 
-            # Odoo: login-ul se face prin JSON-RPC la /web/session/authenticate, nu prin formular HTML
-            if "/web/login" in login_url:
-                if self._login_odoo_json_rpc(base_url, username, password):
-                    return True
-                self.log("   ⚠️ Login JSON-RPC eșuat, încerc cu formularul HTML...", "INFO")
-
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(login_page.content, "html.parser")
+
+            # Odoo: încearcă JSON-RPC (necesită db din formular sau .env dacă e multi-db)
+            odoo_db = ""
+            if "/web/login" in login_url:
+                for inp in soup.find_all("input", {"name": "db"}):
+                    if inp.get("value"):
+                        odoo_db = inp.get("value", "").strip()
+                        break
+                if not odoo_db:
+                    odoo_db = os.getenv(f"{supplier_name}_DB") or os.getenv("MMSMOBILE_DB") or os.getenv("MPSMOBILE_DB") or os.getenv("ODOO_DB") or ""
+                if odoo_db:
+                    self.log(f"   📋 DB: {odoo_db}", "INFO")
+                if self._login_odoo_json_rpc(base_url, username, password, db=odoo_db):
+                    return True
+                self.log("   ⚠️ Login JSON-RPC eșuat, încerc cu formularul HTML...", "INFO")
 
             # Găsește formularul care conține câmpuri login ȘI password (nu primul form din pagină – poate fi search/nav)
             login_form = None
@@ -320,8 +329,8 @@ class BaseScraper(ABC):
 
             location = response.headers.get("Location", "")
 
-            # Succes doar la redirect 302 către /web (sau răspuns JSON cu uid) – nu considera 400 ca succes
-            if response.status_code == 302 and location and ("/web" in location or "/web#" in location):
+            # Succes la redirect 302/303 către /web (Odoo poate răspunde cu 303 See Other)
+            if response.status_code in (302, 303) and location and ("/web" in location or "/web#" in location):
                 if not location.startswith("http"):
                     location = base_url + location if location.startswith("/") else base_url + "/" + location
                 self.log(f"   🔄 Urmează redirect: {location[:60]}...", "INFO")
