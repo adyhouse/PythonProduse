@@ -3543,6 +3543,30 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"⚠ Eroare traducere: {e}", "WARNING")
             return text  # Returnează textul original dacă traducerea eșuează
 
+    def _build_description_html(self, lines):
+        """
+        Convertește liniile descrierii în HTML conform cerințelor: <h2>/<h3> pentru titluri de secțiune,
+        <p> pentru conținut. Linii de forma "Titlu secțiune: conținut" → <h3>Titlu</h3><p>conținut</p>.
+        """
+        if not lines:
+            return ''
+        out = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # "Titlu secțiune: conținut" (titlul scurt, max ~60 caractere) → h3 + p
+            if ': ' in line:
+                idx = line.index(': ')
+                title_part = line[:idx].strip()
+                content_part = line[idx + 2:].strip()
+                if 2 <= len(title_part) <= 60 and content_part:
+                    out.append('<h3>' + html.escape(title_part) + '</h3>')
+                    out.append('<p>' + html.escape(content_part) + '</p>')
+                    continue
+            out.append('<p>' + html.escape(line) + '</p>')
+        return '\n'.join(out) if out else ''
+
     def _tags_look_like_nav(self, tags_str):
         """True dacă tag-urile par a fi din meniu/navigare/footer (Eroare, Europa, Despre, Servicii...)."""
         if not tags_str or not tags_str.strip():
@@ -3808,26 +3832,19 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         short_description = f"{short_desc_intro}. Garanție inclusă. Livrare rapidă în toată România."
                         short_description = self.curata_text(short_description)[:160]
 
-                    # Description: doar textul descrierii, fără tabel (Calitate/Model/Brand sunt deja în atribute și detalii tehnice pe site)
-                    # Format: bullet list (ul/li) dacă sunt mai multe linii, altfel paragraf
+                    # Description: conform cerințelor – structură cu h2/h3 (titluri secțiune) și p (paragrafe)
+                    # Linii "Titlu: conținut" → <h3>Titlu</h3><p>conținut</p>; restul → <p>...</p>
                     if ollama_data and ollama_data.get('desc_ro'):
                         raw_desc = self.curata_text(ollama_data['desc_ro'])
-                        # Linii: din | sau \n
                         lines = [s.strip() for s in re.split(r'[\n|]+', raw_desc) if s.strip()]
-                        if len(lines) >= 2:
-                            # Listă cu bullet-uri
-                            clean_desc_ro = '<ul>\n' + '\n'.join('<li>' + html.escape(line) + '</li>' for line in lines) + '\n</ul>'
-                        elif lines:
-                            clean_desc_ro = '<p>' + html.escape(lines[0]) + '</p>'
-                        else:
+                        clean_desc_ro = self._build_description_html(lines)
+                        if not clean_desc_ro:
                             clean_desc_ro = '<p>' + html.escape(raw_desc[:2000]) + '</p>'
                     else:
-                        # Fără Ollama: descriere din date – dacă are mai multe linii, listă cu bullet-uri
                         raw_fallback = (product.get('description', '') or '')[:2000]
                         lines_fb = [s.strip() for s in re.split(r'[\n|]+', raw_fallback) if s.strip()]
-                        if len(lines_fb) >= 2:
-                            clean_desc_ro = '<ul>\n' + '\n'.join('<li>' + html.escape(line) + '</li>' for line in lines_fb) + '\n</ul>'
-                        else:
+                        clean_desc_ro = self._build_description_html(lines_fb)
+                        if not clean_desc_ro:
                             clean_desc_ro = '<p>' + html.escape(raw_fallback) + '</p>'
 
                     # SKU: MEREU GOL – se generează în Supabase la import (100001, 100002, ...)
@@ -3856,8 +3873,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         if s:
                             ean_value = s
 
-                    # EAN / SKU – apostrof în față ca în export WebGSM (Excel păstrează cifrele ca text, fără formatare)
-                    ean_text = ("'" + ean_value) if (ean_value and ean_value.isdigit()) else (ean_value or '')
+                    # EAN / SKU furnizor – cifre fără apostrof (afișare corectă)
+                    ean_text = ean_value if ean_value else ''
 
                     # SKU furnizor: cod furnizor (ex. 107082130502) – fără apostrof
                     sku_furnizor_raw = product.get('sku_furnizor', product.get('sku', ''))

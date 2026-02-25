@@ -1,7 +1,8 @@
 # 📱 Program Import Produse - MobileSentrix → CSV WooCommerce / Supabase
 
-Program pentru **scraping produse de pe MobileSentrix** și **export CSV** gata de import în **Supabase** / WooCommerce:
-- Web scraping (URL-uri sau EAN/SKU din `sku_list.txt`)
+Program pentru **scraping produse** de la **mai mulți furnizori** (modular) și **export CSV** gata de import în **Supabase** / WooCommerce:
+- **Modular pe furnizori:** dropdown în GUI (MobileSentrix, Foneday, MobileParts, MMS Mobile, MPS Mobile, ComponentiDigitali), `suppliers/<nume>/config.json` + `sku_list.txt`, scraper per furnizor în `src/scraper/`
+- Web scraping (URL-uri sau EAN/SKU din fișierul de SKU al furnizorului selectat)
 - Download imagini + upload pe WordPress (Media)
 - Traducere în română (Google Translate sau Ollama)
 - Titluri Long Tail SEO, categorii WebGSM, atribute (Model, Calitate, Brand, Tip Produs, Tehnologie)
