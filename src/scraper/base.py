@@ -391,6 +391,8 @@ class BaseScraper(ABC):
             except Exception:
                 pass
             # Extrage mesaje de eroare din răspuns (PrestaShop, MPS Mobile etc.)
+            body_lower_err = (response.text or "").lower()
+            recaptcha_detected = "recaptcha" in body_lower_err
             try:
                 resp_soup = BeautifulSoup(response.text or "", "html.parser")
                 for sel in (".alert-danger", ".alert.alert-danger", ".error", "[role='alert']", ".invalid-feedback"):
@@ -398,15 +400,92 @@ class BaseScraper(ABC):
                         txt = (el.get_text() or "").strip()
                         if txt and len(txt) < 200:
                             self.log(f"   📌 Mesaj eroare: {txt[:150]}", "WARNING")
+                            if "recaptcha" in txt.lower():
+                                recaptcha_detected = True
                             break
             except Exception:
                 pass
+
+            # reCAPTCHA detectat: încercă login cu Playwright (browser vizibil, utilizatorul rezolvă captcha manual)
+            if recaptcha_detected:
+                self.log("   🔐 reCAPTCHA detectat – încerc login cu browser (Playwright)...", "INFO")
+                if self._login_with_playwright(login_url, username, password, base_url):
+                    return True
+
             self.log(f"   ⚠️ Login eșuat – verifică credențiale (status: {response.status_code})", "WARNING")
             return False
         except Exception as e:
             import traceback
             self.log(f"   ⚠️ Eroare login: {e}", "WARNING")
             self.log(f"   📋 Traceback: {traceback.format_exc()[:200]}", "DEBUG")
+            return False
+
+    def _login_with_playwright(self, login_url: str, username: str, password: str, base_url: str) -> bool:
+        """
+        Login cu Playwright (browser vizibil) – pentru site-uri cu reCAPTCHA.
+        Deschide browser, completează email/parolă, utilizatorul rezolvă captcha manual.
+        """
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.log("   ✗ Playwright lipsește. Instalează: pip install playwright", "ERROR")
+            self.log("   Apoi: python -m playwright install chromium", "ERROR")
+            return False
+
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context(
+                    user_agent=self._headers().get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                    locale=self.config.get("headers", {}).get("Accept-Language", "de-DE").split(",")[0].strip() or "de-DE",
+                )
+                page = context.new_page()
+                page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+
+                # Completează email și parolă
+                for sel, val in [('input[name="email"]', username), ('input[name="login"]', username), ('input[type="email"]', username)]:
+                    try:
+                        if page.locator(sel).count() > 0:
+                            page.fill(sel, val)
+                            break
+                    except Exception:
+                        pass
+                for sel in ['input[name="password"]', 'input[type="password"]']:
+                    try:
+                        if page.locator(sel).count() > 0:
+                            page.fill(sel, password)
+                            break
+                    except Exception:
+                        pass
+
+                self.log("   🌐 Rezolvă reCAPTCHA în fereastra browser și apasă Login (max 90 sec)", "INFO")
+                # Așteaptă redirect după login (părăsim pagina customer/login)
+                try:
+                    page.wait_for_function(
+                        "!window.location.href.includes('customer/login')",
+                        timeout=90000,
+                    )
+                except Exception:
+                    self.log("   ⚠️ Timeout – nu s-a detectat login reușit", "WARNING")
+                    browser.close()
+                    return False
+
+                # Extrage cookie-uri și le transferă în requests.Session
+                cookies = context.cookies()
+                if not self.session:
+                    self.session = requests.Session()
+                for c in cookies:
+                    self.session.cookies.set(
+                        c.get("name", ""),
+                        c.get("value", ""),
+                        domain=c.get("domain", ""),
+                        path=c.get("path", "/"),
+                    )
+                browser.close()
+                self.log("   ✓ Login reușit (Playwright + reCAPTCHA manual)", "SUCCESS")
+                return True
+        except Exception as e:
+            self.log(f"   ✗ Eroare login Playwright: {e}", "WARNING")
             return False
 
     def _save_debug_html(self, soup: Any, product_url: str = ""):

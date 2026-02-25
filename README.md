@@ -136,6 +136,10 @@ python -m playwright install chromium
 
 După instalare, la procesare se va folosi automat un browser headless și paginile se vor încărca.
 
+### Furnizor MPS Mobile (reCAPTCHA la login)
+
+MPS Mobile (mpsmobile.de) folosește reCAPTCHA pe formularul de login. După ce login-ul prin requests eșuează, se deschide automat un **browser vizibil** (Playwright). Completează email/parola, rezolvă reCAPTCHA manual și apasă Login. Cookie-urile sunt transferate în sesiune și scraping-ul continuă.
+
 ## 🔐 Securitate
 
 ⚠️ **Nu commit-a niciodată:**
