@@ -240,13 +240,19 @@ class MpsmobileScraper(BaseScraper):
                 except Exception:
                     pass
 
-            # 3. Galerie produs – doar din containere explicite (ca MagicZoom/fallback la MobileSentrix)
-            img_selectors = selectors.get("images", [".product-image img", ".product-gallery img"])
+            # 3. Galerie produs – selectori extinși pentru PrestaShop (toate imaginile)
+            img_selectors = selectors.get("images", [
+                ".product-image img", ".product-gallery img",
+                ".product-images img", ".product-cover img", ".product-thumbnails img",
+                "[class*='product-image'] img", "[class*='product-gallery'] img",
+                "[class*='gallery'] img", ".images-container img",
+                "main img[src*='product/images']", "article img[src*='product/images']",
+            ])
             if isinstance(img_selectors, str):
                 img_selectors = [img_selectors]
             for sel in img_selectors:
                 for img in soup.select(sel):
-                    for attr in ("src", "data-src", "data-lazy-src", "data-original"):
+                    for attr in ("src", "data-src", "data-lazy-src", "data-original", "data-image-large-src", "data-zoom-image", "data-image"):
                         src = img.get(attr)
                         if src:
                             _add(_normalize(src))
@@ -254,7 +260,12 @@ class MpsmobileScraper(BaseScraper):
                     srcset = img.get("data-srcset") or img.get("srcset")
                     if srcset:
                         for part in srcset.split(","):
-                            _add(_normalize(part))
+                            _add(_normalize(part.split()[0] if part.strip() else part))
+            # Link-uri către imagini mari (PrestaShop uneori pune full-size în href)
+            for a in soup.select('a[href*="product/images"], a[href*="data/product"]'):
+                href = a.get("href")
+                if href and _is_image_url(href):
+                    _add(_normalize(href))
 
             # 4. Fallback: doar în zona produsului (evită imaginile de la "produse similare")
             # Caută blocul care conține SKU-ul produsului pentru a exclude produse similare
@@ -287,31 +298,22 @@ class MpsmobileScraper(BaseScraper):
                     sidebar.decompose()
             
             raw_html = str(product_block) if product_block else ""
-            max_from_fallback = 2
-            fallback_count = 0
             for pattern in [
                 r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
                 r'"(https?://[^"]*mpsmobile\.de/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
                 r'"(/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
                 r"'(/data/product/images/[^']+\.(?:jpg|jpeg|png|webp|gif)[^']*)'",
             ]:
-                if fallback_count >= max_from_fallback:
-                    break
                 for m in re.finditer(pattern, raw_html, re.I):
-                    if fallback_count >= max_from_fallback:
-                        break
                     u = m.group(1) if m.lastindex else m.group(0)
                     u = _normalize(u)
                     if u and u not in seen and _is_image_url(u):
-                        n_before = len(img_urls)
                         _add(u)
-                        if len(img_urls) > n_before:
-                            fallback_count += 1
             if len(img_urls) > n_before_fallback:
                 self.log("      ✓ Imagini din path /data/product/images/", "INFO")
 
-            # MPS: max 3 imagini per produs (1 principală + max 2 din galeria produsului)
-            img_urls = list(dict.fromkeys(img_urls))[:3]
+            # MPS: până la 10 imagini per produs (toate din galerie)
+            img_urls = list(dict.fromkeys(img_urls))[:10]
             if img_urls:
                 self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
             else:

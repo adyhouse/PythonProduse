@@ -13,7 +13,7 @@
     "name": ["h1", ".product-title"],
     "price": [".price", ".product-price"],
     "description": [".product-description", ".tab-content"],
-    "images": [".product-image img", ".product-gallery img"],
+    "images": [".product-image img", ".product-gallery img", ".product-images img", ".product-cover img", ".product-thumbnails img", "[class*='product-image'] img", "[class*='gallery'] img", ".images-container img", "main img[src*='product/images']", "article img[src*='product/images']"],
     "sku_table_header": "Art-Nr.",
     "ean_table_header": "GTIN:",
     "brand_table_header": "Hersteller"

@@ -434,10 +434,47 @@ class BaseScraper(ABC):
             self.log(f"   📋 Traceback: {traceback.format_exc()[:200]}", "DEBUG")
             return False
 
+    def _get_saved_cookies_for_playwright(self, base_url: str = "") -> List[Dict]:
+        """Citește cookie-uri din fișier în format Playwright."""
+        path = self._get_cookies_file_path()
+        if not path or not path.exists():
+            return []
+        base_domain = ""
+        if base_url:
+            base_domain = base_url.replace("https://", "").replace("http://", "").split("/")[0]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, list):
+                return []
+            pw_cookies = []
+            for c in data:
+                name = c.get("name") or c.get("key")
+                if not name:
+                    continue
+                dom = (c.get("domain") or "").strip()
+                if not dom:
+                    dom = base_domain or (".mpsmobile.de" if "mpsmobile" in (self.name or "").lower() else "")
+                if not dom:
+                    continue
+                pw_cookies.append({
+                    "name": name,
+                    "value": c.get("value", ""),
+                    "domain": dom,
+                    "path": c.get("path") or "/",
+                    "expires": -1,
+                    "httpOnly": False,
+                    "secure": True,
+                    "sameSite": "Lax",
+                })
+            return pw_cookies
+        except Exception:
+            return []
+
     def _login_with_playwright(self, login_url: str, username: str, password: str, base_url: str) -> bool:
         """
         Login cu Playwright (browser vizibil) – pentru site-uri cu reCAPTCHA.
-        Deschide browser, completează email/parolă, utilizatorul rezolvă captcha manual.
+        Mai întâi încarcă cookie-uri salvate – dacă sunt valide, utilizatorul e deja logat, fără captcha.
+        Dacă nu, deschide formularul și utilizatorul rezolvă captcha manual.
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -455,8 +492,40 @@ class BaseScraper(ABC):
                     locale=lang_header,
                     extra_http_headers={"Accept-Language": lang_header},
                 )
+                # Încarcă cookie-uri salvate – poate suntem deja logați
+                saved = self._get_saved_cookies_for_playwright(base_url)
+                if saved:
+                    try:
+                        to_add = []
+                        for c in saved:
+                            if c.get("domain"):
+                                to_add.append(c)
+                        if to_add:
+                            context.add_cookies(to_add)
+                    except Exception:
+                        pass
                 page = context.new_page()
-                # Forțează URL în germană (ex. /de/customer/login)
+                # Mergem la pagina de cont – dacă cookie-urile sunt valide, suntem deja logați
+                account_url = f"{base_url.rstrip('/')}/{self.config.get('default_language', 'de')}/customer/account"
+                page.goto(account_url, wait_until="domcontentloaded", timeout=30000)
+                body = (page.content() or "").lower()
+                if any(x in body for x in ("abmelden", "logout", "ausloggen", "sign out")):
+                    self.log("   ✓ Deja logat (cookie-uri salvate în browser) – fără captcha", "SUCCESS")
+                    cookies = context.cookies()
+                    if not self.session:
+                        self.session = requests.Session()
+                    for c in cookies:
+                        self.session.cookies.set(
+                            c.get("name", ""),
+                            c.get("value", ""),
+                            domain=c.get("domain", ""),
+                            path=c.get("path", "/"),
+                        )
+                    browser.close()
+                    self._save_cookies()
+                    return True
+                # Nu suntem logați – mergem la login
+                self.log("   🌐 Cookie-uri expirate – deschid formular login...", "INFO")
                 page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
 
                 # Completează email și parolă
