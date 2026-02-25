@@ -325,18 +325,33 @@ class BaseScraper(ABC):
                         action_url = (login_url.rstrip("/") + "/" + action.lstrip("/"))
             self.log(f"   📍 POST la: {action_url}", "INFO")
 
-            response = self.session.post(action_url, data=login_data, headers=self._headers(), timeout=15, allow_redirects=False)
-            self.log(f"   📥 Răspuns login (status: {response.status_code})", "INFO")
+            response = self.session.post(action_url, data=login_data, headers=self._headers(), timeout=15, allow_redirects=True)
+            self.log(f"   📥 Răspuns login (status: {response.status_code}, final URL: {response.url[:70]}...)", "INFO")
 
             location = response.headers.get("Location", "")
+            final_url = (response.url or "").lower()
 
-            # Succes la redirect 302/303 către /web (Odoo poate răspunde cu 303 See Other)
-            if response.status_code in (302, 303) and location and ("/web" in location or "/web#" in location):
-                if not location.startswith("http"):
-                    location = base_url + location if location.startswith("/") else base_url + "/" + location
-                self.log(f"   🔄 Urmează redirect: {location[:60]}...", "INFO")
-                self.session.get(location, headers=self._headers(), timeout=15)
-                self.log("   ✓ Login reușit", "SUCCESS")
+            # Succes: redirect 302/303 către dashboard/account (Odoo /web, PrestaShop /my-account, etc.)
+            success_redirects = ("/web", "/web#", "/my-account", "/customer/account", "/account", "/dashboard", "/kundenkonto")
+            if response.status_code in (302, 303) and location:
+                loc_lower = location.lower()
+                if any(s in loc_lower for s in success_redirects) and "/login" not in loc_lower:
+                    if not location.startswith("http"):
+                        location = base_url + location if location.startswith("/") else base_url + "/" + location
+                    self.log(f"   🔄 Redirect succes: {location[:60]}...", "INFO")
+                    self.session.get(location, headers=self._headers(), timeout=15)
+                    self.log("   ✓ Login reușit", "SUCCESS")
+                    return True
+
+            # Succes: după allow_redirects=True, suntem pe pagină account (nu login)
+            if any(s in final_url for s in success_redirects) and "/login" not in final_url and "/customer/login" not in final_url:
+                self.log("   ✓ Login reușit (redirect la account)", "SUCCESS")
+                return True
+
+            # Succes: pagină 200 conține "logout"/"abmelden" = suntem logați (PrestaShop, custom, mpsmobile.de)
+            body_lower = (response.text or "").lower()
+            if response.status_code == 200 and any(x in body_lower for x in ("logout", "abmelden", "ausloggen", "log out", "sign out", "abmeldung")):
+                self.log("   ✓ Login reușit (pagina conține logout)", "SUCCESS")
                 return True
 
             # Verifică răspuns JSON (unele Odoo răspund cu 200 + JSON)
