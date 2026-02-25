@@ -3,6 +3,7 @@ Clasă de bază pentru scraper-uri furnizori.
 Fiecare furnizor implementează scrape_product(sku_or_url) și returnează
 un dict compatibil cu pipeline-ul WebGSM (product_data).
 """
+import json
 import re
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse
@@ -254,6 +255,10 @@ class BaseScraper(ABC):
         if not login_url:
             self.log("   ⚠️ Login URL lipsă din config", "WARNING")
             return False
+
+        # Încearcă mai întâi cookie-uri salvate (de la login anterior cu reCAPTCHA)
+        if self._try_saved_cookies(base_url, lang):
+            return True
         
         try:
             self.log(f"   🔐 Încearcă login la: {login_url}", "INFO")
@@ -278,6 +283,7 @@ class BaseScraper(ABC):
                 if odoo_db:
                     self.log(f"   📋 DB: {odoo_db}", "INFO")
                 if self._login_odoo_json_rpc(base_url, username, password, db=odoo_db):
+                    self._save_cookies()
                     return True
                 self.log("   ⚠️ Login JSON-RPC eșuat, încerc cu formularul HTML...", "INFO")
 
@@ -361,17 +367,20 @@ class BaseScraper(ABC):
                     self.log(f"   🔄 Redirect succes: {location[:60]}...", "INFO")
                     self.session.get(location, headers=self._headers(), timeout=15)
                     self.log("   ✓ Login reușit", "SUCCESS")
+                    self._save_cookies()
                     return True
 
             # Succes: după allow_redirects=True, suntem pe pagină account (nu login)
             if any(s in final_url for s in success_redirects) and "/login" not in final_url and "/customer/login" not in final_url:
                 self.log("   ✓ Login reușit (redirect la account)", "SUCCESS")
+                self._save_cookies()
                 return True
 
             # Succes: pagină 200 conține "logout"/"abmelden" = suntem logați (PrestaShop, custom, mpsmobile.de)
             body_lower = (response.text or "").lower()
             if response.status_code == 200 and any(x in body_lower for x in ("logout", "abmelden", "ausloggen", "log out", "sign out", "abmeldung")):
                 self.log("   ✓ Login reușit (pagina conține logout)", "SUCCESS")
+                self._save_cookies()
                 return True
 
             # Verifică răspuns JSON (unele Odoo răspund cu 200 + JSON)
@@ -379,6 +388,7 @@ class BaseScraper(ABC):
                 data = response.json()
                 if data.get("result") and (data["result"].get("uid") or data["result"].get("session_id")):
                     self.log("   ✓ Login reușit (JSON)", "SUCCESS")
+                    self._save_cookies()
                     return True
             except Exception:
                 pass
@@ -435,11 +445,14 @@ class BaseScraper(ABC):
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=False)
+                lang_header = self.config.get("headers", {}).get("Accept-Language", "de-DE,de;q=0.9").split(",")[0].strip() or "de-DE"
                 context = browser.new_context(
                     user_agent=self._headers().get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
-                    locale=self.config.get("headers", {}).get("Accept-Language", "de-DE").split(",")[0].strip() or "de-DE",
+                    locale=lang_header,
+                    extra_http_headers={"Accept-Language": lang_header},
                 )
                 page = context.new_page()
+                # Forțează URL în germană (ex. /de/customer/login)
                 page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
 
                 # Completează email și parolă
@@ -483,10 +496,94 @@ class BaseScraper(ABC):
                     )
                 browser.close()
                 self.log("   ✓ Login reușit (Playwright + reCAPTCHA manual)", "SUCCESS")
+                self._save_cookies()
                 return True
         except Exception as e:
             self.log(f"   ✗ Eroare login Playwright: {e}", "WARNING")
             return False
+
+    def _get_cookies_file_path(self) -> Optional[Path]:
+        """Calea fișierului pentru cookie-uri salvate (logs/cookies_{supplier}.json)."""
+        script_dir = self.script_dir
+        if not script_dir:
+            return None
+        logs = Path(script_dir) / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        return logs / f"cookies_{self.name}.json"
+
+    def _load_saved_cookies(self) -> bool:
+        """Încarcă cookie-uri din fișier în self.session. Returnează True dacă s-au încărcat."""
+        path = self._get_cookies_file_path()
+        if not path or not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, list) or not data:
+                return False
+            self.session = requests.Session()
+            for c in data:
+                name = c.get("name") or c.get("key")
+                if not name:
+                    continue
+                dom = c.get("domain")
+                self.session.cookies.set(
+                    name,
+                    c.get("value", ""),
+                    domain=dom if dom else None,
+                    path=c.get("path") or "/",
+                )
+            return True
+        except Exception:
+            return False
+
+    def _save_cookies(self) -> None:
+        """Salvează cookie-urile din self.session în fișier pentru reuse la produsele următoare."""
+        if not self.session or not self.session.cookies:
+            return
+        path = self._get_cookies_file_path()
+        if not path:
+            return
+        try:
+            data = []
+            for c in self.session.cookies:
+                data.append({
+                    "name": c.name,
+                    "value": c.value,
+                    "domain": c.domain or "",
+                    "path": c.path or "/",
+                })
+            path.write_text(json.dumps(data, indent=0), encoding="utf-8")
+            self.log(f"   💾 Cookie-uri salvate pentru sesiuni viitoare: {path.name}", "INFO")
+        except Exception as e:
+            self.log(f"   ⚠️ Nu s-au putut salva cookie-urile: {e}", "WARNING")
+
+    def _try_saved_cookies(self, base_url: str, lang: str) -> bool:
+        """
+        Încearcă cookie-uri salvate. Dacă sunt valide (request la account reușește),
+        returnează True și nu mai e nevoie de login.
+        """
+        if not self._load_saved_cookies():
+            return False
+        account_url = f"{base_url.rstrip('/')}/{lang}/customer/account"
+        try:
+            r = self.session.get(account_url, headers=self._headers(), timeout=15)
+            if r.status_code != 200:
+                return False
+            url_final = (r.url or "").lower()
+            body = (r.text or "").lower()
+            # Valid: nu suntem pe login, și pagina conține logout/abmelden
+            if "customer/login" in url_final:
+                return False
+            if any(x in body for x in ("abmelden", "logout", "ausloggen", "sign out")):
+                self.log("   ✓ Sesiune validă (cookie-uri salvate) – fără login", "SUCCESS")
+                return True
+            # PrestaShop: account page fără login redirect = probabil OK
+            if "customer/account" in url_final or "kundenkonto" in url_final:
+                self.log("   ✓ Sesiune validă (cookie-uri salvate) – fără login", "SUCCESS")
+                return True
+        except Exception:
+            pass
+        return False
 
     def _save_debug_html(self, soup: Any, product_url: str = ""):
         """Salvează HTML-ul paginii produsului în logs/ pentru debugging."""
