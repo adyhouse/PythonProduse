@@ -159,10 +159,9 @@ class MpsmobileScraper(BaseScraper):
                         idx = url.find(marker)
                         suffix = url[idx + len(marker):].split("?")[0].strip()
                         if suffix and ".." not in suffix:
-                            # Dacă e thumbnail/small/mini, folosim doar numele fișierului → detail/normal
+                            # Dacă e thumbnail/small/mini/zoom, folosim detail/normal (o singură variantă per imagine)
                             lower = suffix.lower()
-                            if any(lower.startswith(p) for p in ("thumbnail/", "thumb/", "small/", "mini/", "tiny/", "preview/", "small_image/")):
-                                # păstrăm doar UUID.ext sau ultimul segment
+                            if any(lower.startswith(p) for p in ("thumbnail/", "thumb/", "small/", "mini/", "tiny/", "preview/", "small_image/", "detail/zoom/")):
                                 filename = suffix.split("/")[-1]
                                 if filename and "." in filename:
                                     suffix = _LARGE_PATH + "/" + filename
@@ -201,13 +200,27 @@ class MpsmobileScraper(BaseScraper):
                     "_thumb", "-thumb", "_s.", "-s.", "small_image", "preview", "/resize/"
                 ])
 
+            def _is_product_gallery_image(url):
+                """Doar imagini din galeria produsului – exclude block/triple (related), suitable-for (compatibilitate)."""
+                if not url:
+                    return False
+                u = url.lower()
+                if "suitable-for" in u or "/block/" in u or "block/triple" in u:
+                    return False
+                return "data/product/images" in u or "product/images" in u
+
             seen = set()
 
             def _add(u):
                 u = _canonical_mps_image_url(u) if u else None
-                if u and u not in seen and _is_image_url(u) and not _is_thumbnail_or_small(u):
-                    seen.add(u)
-                    img_urls.append(u)
+                if not u or u in seen:
+                    return
+                if not _is_image_url(u) or _is_thumbnail_or_small(u):
+                    return
+                if not _is_product_gallery_image(u):
+                    return
+                seen.add(u)
+                img_urls.append(u)
 
             # 1. og:image (meta tags – imaginea principală, ca la MobileSentrix)
             og_images = soup.find_all("meta", property="og:image")
@@ -239,6 +252,14 @@ class MpsmobileScraper(BaseScraper):
                             self.log(f"      ✓ Găsite {len(images) if isinstance(images, list) else 1} imagini în JSON-LD", "INFO")
                 except Exception:
                     pass
+
+            # 2b. Imagini cu data-src/data-image (galeria MPS – thumbnails care au URL mare în atribut)
+            for img in soup.find_all("img"):
+                for attr in ("data-src", "data-image", "data-image-large-src", "data-zoom-image", "src"):
+                    src = img.get(attr)
+                    if src and ("detail/normal" in src or "detail/zoom" in src):
+                        _add(_normalize(src))
+                        break
 
             # 3. Galerie produs – selectori extinși pentru PrestaShop (toate imaginile)
             img_selectors = selectors.get("images", [
@@ -298,11 +319,12 @@ class MpsmobileScraper(BaseScraper):
                     sidebar.decompose()
             
             raw_html = str(product_block) if product_block else ""
+            # Doar detail/normal și detail/zoom – exclude block/triple (produse related)
             for pattern in [
-                r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
-                r'"(https?://[^"]*mpsmobile\.de/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
-                r'"(/data/product/images/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
-                r"'(/data/product/images/[^']+\.(?:jpg|jpeg|png|webp|gif)[^']*)'",
+                r'https?://[^"\')\s]*mpsmobile\.de/data/product/images/detail/(?:normal|zoom)/[^"\')\s]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"\')\s]*)?',
+                r'"(https?://[^"]*mpsmobile\.de/data/product/images/detail/(?:normal|zoom)/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
+                r'"(/data/product/images/detail/(?:normal|zoom)/[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"',
+                r"'(/data/product/images/detail/(?:normal|zoom)/[^']+\.(?:jpg|jpeg|png|webp|gif)[^']*)'",
             ]:
                 for m in re.finditer(pattern, raw_html, re.I):
                     u = m.group(1) if m.lastindex else m.group(0)
