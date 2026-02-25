@@ -280,11 +280,11 @@ class BaseScraper(ABC):
                     return True
                 self.log("   ⚠️ Login JSON-RPC eșuat, încerc cu formularul HTML...", "INFO")
 
-            # Găsește formularul care conține câmpuri login ȘI password (nu primul form din pagină – poate fi search/nav)
+            # Găsește formularul care conține câmpuri login ȘI password (MPS Mobile folosește "email", nu "login")
             login_form = None
             for form in soup.find_all("form"):
                 names = [inp.get("name", "").lower() for inp in form.find_all("input") if inp.get("name")]
-                has_login = any("login" in n or "user" in n for n in names if "password" not in n and "csrf" not in n)
+                has_login = any(x in n for n in names for x in ["login", "user", "email", "username"] if "password" not in n and "csrf" not in n and "token" not in n)
                 has_password = any("password" in n for n in names)
                 if has_login and has_password:
                     login_form = form
@@ -302,11 +302,14 @@ class BaseScraper(ABC):
                         login_data[name] = value
                 self.log(f"   📋 Câmpuri formular: {list(login_data.keys())}", "INFO")
 
-            login_field = next((k for k in login_data if "login" in k.lower() and "password" not in k.lower() and "csrf" not in k.lower()), None)
+            # MPS Mobile, PrestaShop etc. folosesc "email" ca câmp login, nu "login"
+            login_field = next((k for k in login_data if any(x in k.lower() for x in ["login", "user", "email", "username"]) and "password" not in k.lower() and "csrf" not in k.lower() and "token" not in k.lower()), None)
             if login_field:
                 login_data[login_field] = username
+            elif "email" in login_data:
+                login_data["email"] = username
             else:
-                login_data.setdefault("login", username)
+                login_data["login"] = username
             password_field = next((k for k in login_data if "password" in k.lower()), None)
             if password_field:
                 login_data[password_field] = password
