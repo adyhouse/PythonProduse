@@ -247,7 +247,8 @@ class BaseScraper(ABC):
         self.log(f"   ✓ Credențiale găsite (username: {username[:3]}***)", "INFO")
         
         base_url = self.config.get("base_url", "").rstrip("/")
-        login_url = login_config.get("url", "").format(base_url=base_url)
+        lang = self.config.get("default_language", "en")
+        login_url = login_config.get("url", "").format(base_url=base_url, lang=lang)
         
         if not login_url:
             self.log("   ⚠️ Login URL lipsă din config", "WARNING")
