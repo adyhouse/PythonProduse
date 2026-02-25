@@ -256,7 +256,11 @@ class BaseScraper(ABC):
             self.log("   ⚠️ Login URL lipsă din config", "WARNING")
             return False
 
-        # Încearcă mai întâi cookie-uri salvate (de la login anterior cu reCAPTCHA)
+        # 1) Dacă avem deja sesiune cu cookie-uri (produs anterior din același batch), validăm
+        if self.session and self.session.cookies and self._validate_session(base_url, lang):
+            self.log("   ✓ Sesiune activă validă – fără login", "SUCCESS")
+            return True
+        # 2) Încarcă cookie-uri salvate din fișier (de la rulare anterioară)
         if self._try_saved_cookies(base_url, lang):
             return True
         
@@ -557,32 +561,47 @@ class BaseScraper(ABC):
         except Exception as e:
             self.log(f"   ⚠️ Nu s-au putut salva cookie-urile: {e}", "WARNING")
 
+    def _validate_session(self, base_url: str, lang: str) -> bool:
+        """Verifică dacă sesiunea curentă (self.session) este încă validă."""
+        if not self.session:
+            return False
+        return self._check_session_valid(base_url, lang)
+
+    def _check_session_valid(self, base_url: str, lang: str) -> bool:
+        """Face request de validare și returnează True dacă suntem logați."""
+        test_urls = [
+            f"{base_url.rstrip('/')}/{lang}/customer/account",
+            f"{base_url.rstrip('/')}/{lang}/kundenkonto",
+            f"{base_url.rstrip('/')}/{lang}/",
+        ]
+        for url in test_urls:
+            try:
+                r = self.session.get(url, headers=self._headers(), timeout=15)
+                if r.status_code != 200:
+                    continue
+                url_final = (r.url or "").lower()
+                body = (r.text or "").lower()
+                if "customer/login" in url_final:
+                    continue
+                if any(x in body for x in ("abmelden", "logout", "ausloggen", "sign out")):
+                    return True
+                if "customer/account" in url_final or "kundenkonto" in url_final:
+                    return True
+                if "/de/" in url_final and "login" not in url_final and len(body) > 500:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def _try_saved_cookies(self, base_url: str, lang: str) -> bool:
         """
-        Încearcă cookie-uri salvate. Dacă sunt valide (request la account reușește),
-        returnează True și nu mai e nevoie de login.
+        Încearcă cookie-uri salvate din fișier. Dacă sunt valide, returnează True.
         """
         if not self._load_saved_cookies():
             return False
-        account_url = f"{base_url.rstrip('/')}/{lang}/customer/account"
-        try:
-            r = self.session.get(account_url, headers=self._headers(), timeout=15)
-            if r.status_code != 200:
-                return False
-            url_final = (r.url or "").lower()
-            body = (r.text or "").lower()
-            # Valid: nu suntem pe login, și pagina conține logout/abmelden
-            if "customer/login" in url_final:
-                return False
-            if any(x in body for x in ("abmelden", "logout", "ausloggen", "sign out")):
-                self.log("   ✓ Sesiune validă (cookie-uri salvate) – fără login", "SUCCESS")
-                return True
-            # PrestaShop: account page fără login redirect = probabil OK
-            if "customer/account" in url_final or "kundenkonto" in url_final:
-                self.log("   ✓ Sesiune validă (cookie-uri salvate) – fără login", "SUCCESS")
-                return True
-        except Exception:
-            pass
+        if self._check_session_valid(base_url, lang):
+            self.log("   ✓ Sesiune validă (cookie-uri salvate) – fără login", "SUCCESS")
+            return True
         return False
 
     def _save_debug_html(self, soup: Any, product_url: str = ""):

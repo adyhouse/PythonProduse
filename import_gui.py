@@ -1611,7 +1611,8 @@ class ImportProduse:
    5. Permissions: "Read/Write"
    6. Generate și copiază Consumer Key și Secret
 
-⚠️ URL fără / la final: https://webgsm.ro (corect)
+⚠️ URL site LIVE: https://webgsm.ro (fără /test, fără / la final)
+   Imagini: URL-urile cu /test/ sunt corectate automat la export.
         """
         ttk.Label(info_frame, text=info_text.strip(), justify='left', 
                  font=('Consolas', 8)).pack(anchor='w')
@@ -1825,6 +1826,11 @@ class ImportProduse:
             if url.endswith('/'):
                 url = url[:-1]
                 self.wc_url_var.set(url)
+            # Site live: elimină /test din URL dacă a rămas din perioada de testare
+            if '/test' in url.lower():
+                url = re.sub(r'/test/?$', '', url).rstrip('/')
+                self.wc_url_var.set(url)
+                self.log("   ⚠️ /test eliminat din URL – site live", "INFO")
             
             # Validare curs valutar
             try:
@@ -3784,9 +3790,9 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                             # Combină cu URL-urile directe și sortează după index
                             image_urls.extend(wp_results)
 
-                        # Sortează după index și extrage doar URL-urile
+                        # Sortează după index și extrage doar URL-urile (fără /test/ – site live)
                         image_urls.sort(key=lambda x: x[0])
-                        image_urls = [url for _, url in image_urls]
+                        image_urls = [self._normalize_image_url(url) for _, url in image_urls]
 
                     # Limită nr. de link-uri (imagini deja pe site) în CSV – mai puține = import mai rapid
                     if len(image_urls) > MAX_IMAGES_IN_CSV:
@@ -4944,6 +4950,12 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"   ⚠️ Nu am putut șterge phantom ID {product_id}: {e}", "WARNING")
             return False
 
+    def _normalize_image_url(self, url):
+        """Elimină /test/ din URL-uri webgsm.ro (site live, fără folder test)."""
+        if not url or not isinstance(url, str):
+            return url
+        return url.replace('webgsm.ro/test/', 'webgsm.ro/').replace('www.webgsm.ro/test/', 'www.webgsm.ro/')
+
     def upload_image_to_wordpress(self, local_image_path):
         """Uploadează imagine din folder local pe server WordPress/WooCommerce"""
         try:
@@ -4998,7 +5010,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             if response.status_code in [200, 201]:
                 media_data = response.json()
                 media_id = media_data.get('id')
-                media_url_result = media_data.get('source_url')
+                media_url_result = self._normalize_image_url(media_data.get('source_url'))
                 self.log(f"         ✓ ID={media_id}", "SUCCESS")
                 return {
                     'id': media_id,
@@ -5024,7 +5036,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         if r2.status_code in [200, 201]:
                             md = r2.json()
                             self.log(f"         ✓ ID={md.get('id')} (după retry)", "SUCCESS")
-                            return {'id': md.get('id'), 'src': md.get('source_url'), 'name': local_path.name}
+                            return {'id': md.get('id'), 'src': self._normalize_image_url(md.get('source_url')), 'name': local_path.name}
                     except Exception as e2:
                         self.log(f"         ✗ Retry eșuat: {e2}", "WARNING")
                 return None
