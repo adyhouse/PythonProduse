@@ -136,9 +136,16 @@ python -m playwright install chromium
 
 După instalare, la procesare se va folosi automat un browser headless și paginile se vor încărca.
 
-### Furnizor MPS Mobile (reCAPTCHA la login)
+### Furnizor MPS Mobile (reCAPTCHA + cookie-uri)
 
-MPS Mobile (mpsmobile.de) folosește reCAPTCHA pe formularul de login. După ce login-ul prin requests eșuează, se deschide automat un **browser vizibil** (Playwright). Completează email/parola, rezolvă reCAPTCHA manual și apasă Login. Cookie-urile sunt transferate în sesiune și scraping-ul continuă.
+**Strategie scurtă:**
+1. **Sesiune activă** – dacă există cookie-uri din produsul anterior, se validează; nu se cere login.
+2. **Cookie-uri salvate** – din `logs/cookies_mpsmobile.json`; dacă valide, fără login.
+3. **Login requests** – POST la formular; dacă răspuns conține „recaptcha” → Playwright.
+4. **Login Playwright** – browser vizibil. Încarcă cookie-uri salvate → dacă deja logat, gata. Altfel → formular, utilizatorul rezolvă reCAPTCHA manual.
+5. **Salvare** – după login reușit, cookie-uri în `logs/cookies_mpsmobile.json` pentru sesiuni viitoare.
+
+Detalii complet în [REPO_OVERVIEW.md](REPO_OVERVIEW.md#6-strategie-login-mps-mobile-recaptcha--cookie-uri).
 
 ## 🔐 Securitate
 
@@ -165,7 +172,7 @@ Program pentru uz personal/comercial. Asigură-te că ai permisiune să scrapezi
 
 ## 📅 Versiune
 
-**v3.1+** – CSV pentru Supabase: SKU gol, stoc 0, EAN fără apostrof, meta:pret_achizitie EUR, brand real, Atribut 4 Tip Produs / 5 Tehnologie, global=0, coloane noi; upload imagini cu WP_USERNAME/WP_APP_PASSWORD; Test Conexiune cu import woocommerce API; verificare Ollama pe rețea. Documentație: [REPO_OVERVIEW.md](REPO_OVERVIEW.md).
+**v3.2** – MPS Mobile: login reCAPTCHA via Playwright, cookie-uri salvate și reutilizate; imagini MPS: toate din galerie (2+); URL imagini fără /test/ (site live). v3.1: CSV Supabase, upload WP, Ollama. Documentație: [REPO_OVERVIEW.md](REPO_OVERVIEW.md).
 
 ---
 

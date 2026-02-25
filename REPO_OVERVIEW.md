@@ -195,7 +195,40 @@ Fișierele **.txt** din repo (GHID_*, CURATA_*, DUPLICATE_*, etc.) pot descrie f
 
 ---
 
-## 6. Versiune și dată
+## 6. Strategie login MPS Mobile (reCAPTCHA + cookie-uri)
 
-- **OVERVIEW:** actualizat pentru starea din 2026: **script modular pe furnizori** (dropdown, ScraperFactory, suppliers/, config per furnizor, skip_images, meta:furnizor_activ); SKU gol, EAN fără apostrof, stoc 0, meta:pret_achizitie EUR, brand real, atribute 4–5, global=0, coloane noi, upload WP, Ollama, test conexiune.
+### 6.1 Flux scurt
+
+1. **Încercare sesiune activă** – dacă `self.session` are cookie-uri (produs anterior din același batch), se validează cu request la `/de/customer/account`. Dacă pagina conține „Abmelden” → OK, fără login.
+2. **Încărcare cookie-uri salvate** – din `logs/cookies_mpsmobile.json`. Se validează la fel. Dacă valide → OK, fără login.
+3. **Login requests** – POST la formular cu Referer/Origin. Dacă răspunsul conține „recaptcha” → trecem la Playwright.
+4. **Login Playwright** – browser vizibil. Încarcă cookie-uri salvate în context → merge la `/de/customer/account`. Dacă deja logat („Abmelden” în pagină) → închide, salvează cookie-uri, gata. Altfel → formular login, utilizatorul rezolvă reCAPTCHA manual.
+5. **Salvare cookie-uri** – după login reușit (requests sau Playwright), se salvează în `logs/cookies_mpsmobile.json` pentru sesiuni viitoare.
+
+### 6.2 Fișiere implicate
+
+| Fișier | Rol |
+|--------|-----|
+| `src/scraper/base.py` | `_login_if_required()`, `_login_with_playwright()`, `_try_saved_cookies()`, `_save_cookies()`, `_validate_session()`, `_get_saved_cookies_for_playwright()` |
+| `logs/cookies_mpsmobile.json` | Cookie-uri salvate (nu se versionă, în .gitignore) |
+
+---
+
+## 7. Modificări recente (feb 2026)
+
+| Modificare | Fișier | Descriere |
+|------------|--------|-----------|
+| **reCAPTCHA + Playwright** | `base.py` | Detectare „recaptcha” în răspuns → login cu Playwright (browser vizibil), utilizatorul rezolvă captcha manual |
+| **Salvare cookie-uri** | `base.py` | După login reușit, cookie-uri în `logs/cookies_{supplier}.json` |
+| **Reutilizare cookie-uri** | `base.py` | La fiecare produs: 1) validare sesiune activă, 2) încărcare cookie-uri din fișier, 3) doar dacă expirate → login |
+| **Playwright cu cookie-uri** | `base.py` | La deschidere Playwright, încarcă cookie-uri salvate → dacă valide, utilizatorul e deja logat, fără captcha |
+| **URL imagini fără /test/** | `import_gui.py` | `_normalize_image_url()` – elimină `webgsm.ro/test/` din URL-uri (site live) |
+| **Config URL fără /test** | `import_gui.py` | La salvare config, elimină automat `/test` din WOOCOMMERCE_URL |
+| **Imagini MPS Mobile** | `mpsmobile.py` | Selectori extinși, `data-src`/`data-image`, filtru `_is_product_gallery_image` (exclude block/triple, suitable-for), limită 10 imagini, deduplicare detail/zoom → detail/normal |
+
+---
+
+## 8. Versiune și dată
+
+- **OVERVIEW:** actualizat pentru starea din 2026: **script modular pe furnizori** (dropdown, ScraperFactory, suppliers/, config per furnizor, skip_images, meta:furnizor_activ); SKU gol, EAN fără apostrof, stoc 0, meta:pret_achizitie EUR, brand real, atribute 4–5, global=0, coloane noi, upload WP, Ollama, test conexiune. **+ Login MPS Mobile:** reCAPTCHA via Playwright, cookie-uri salvate și reutilizate; **+ Imagini MPS:** toate din galerie (2+); **+ URL imagini:** normalizare fără /test/.
 - **Sursă de adevăr:** `import_gui.py`, `src/scraper/`, `suppliers/` + acest `REPO_OVERVIEW.md`.

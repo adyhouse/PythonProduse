@@ -785,6 +785,23 @@ EXCHANGE_RATE=4.97
 
 ---
 
+## 🔐 LOGIN MPS MOBILE (reCAPTCHA + cookie-uri)
+
+**Furnizor:** MPS Mobile (mpsmobile.de) – necesită login pentru produse.
+
+**Strategie scurtă:**
+1. **Sesiune activă** – dacă există cookie-uri din produsul anterior, validare la `/de/customer/account`; dacă pagină conține „Abmelden” → OK, fără login.
+2. **Cookie-uri salvate** – din `logs/cookies_mpsmobile.json`; validare la fel; dacă valide → fără login.
+3. **Login requests** – POST la formular cu Referer/Origin; dacă răspuns conține „recaptcha” → Playwright.
+4. **Login Playwright** – browser vizibil. Încarcă cookie-uri salvate în context → merge la `/de/customer/account`; dacă deja logat → gata. Altfel → formular, utilizatorul rezolvă reCAPTCHA manual.
+5. **Salvare** – după login reușit, cookie-uri în `logs/cookies_mpsmobile.json`.
+
+**Fișiere:** `src/scraper/base.py` – `_login_if_required()`, `_login_with_playwright()`, `_try_saved_cookies()`, `_save_cookies()`, `_validate_session()`, `_get_saved_cookies_for_playwright()`.
+
+**Detalii:** [REPO_OVERVIEW.md](REPO_OVERVIEW.md#6-strategie-login-mps-mobile-recaptcha--cookie-uri).
+
+---
+
 ## 🎯 CHECKLISTA PENTRU MODIFICĂRI
 
 - [ ] Ai citit această documentație complet?
@@ -797,6 +814,6 @@ EXCHANGE_RATE=4.97
 ---
 
 **Creat:** 24.01.2026  
-**Actualizat:** 01.02.2026 – Categorii WebGSM (slug-uri, get_webgsm_category, slug-uri interzise)  
-**Versiune Program:** 3.1  
+**Actualizat:** 01.02.2026 – Categorii WebGSM; Login MPS Mobile (reCAPTCHA, cookie-uri)  
+**Versiune Program:** 3.2  
 **Autor Documentație:** AI Assistant
