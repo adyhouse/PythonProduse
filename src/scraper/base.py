@@ -5,6 +5,7 @@ un dict compatibil cu pipeline-ul WebGSM (product_data).
 """
 import re
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -300,6 +301,14 @@ class BaseScraper(ABC):
                     inp_type = inp.get("type", "").lower()
                     if name and inp_type != "submit":
                         login_data[name] = value
+                # Fallback CSRF din meta tags (unele site-uri PrestaShop pun token-ul acolo)
+                for key in list(login_data.keys()):
+                    if "csrf" in key.lower() or "token" in key.lower():
+                        if not login_data[key]:
+                            for meta in soup.find_all("meta", {"name": re.compile(r"csrf|token", re.I)}):
+                                if meta.get("content"):
+                                    login_data[key] = meta.get("content", "").strip()
+                                    break
                 self.log(f"   📋 Câmpuri formular: {list(login_data.keys())}", "INFO")
 
             # MPS Mobile, PrestaShop etc. folosesc "email" ca câmp login, nu "login"
@@ -328,7 +337,15 @@ class BaseScraper(ABC):
                         action_url = (login_url.rstrip("/") + "/" + action.lstrip("/"))
             self.log(f"   📍 POST la: {action_url}", "INFO")
 
-            response = self.session.post(action_url, data=login_data, headers=self._headers(), timeout=15, allow_redirects=True)
+            post_headers = dict(self._headers())
+            post_headers["Referer"] = login_url
+            try:
+                parsed = urlparse(login_url)
+                post_headers["Origin"] = f"{parsed.scheme}://{parsed.netloc}"
+            except Exception:
+                pass
+
+            response = self.session.post(action_url, data=login_data, headers=post_headers, timeout=15, allow_redirects=True)
             self.log(f"   📥 Răspuns login (status: {response.status_code}, final URL: {response.url[:70]}...)", "INFO")
 
             location = response.headers.get("Location", "")
@@ -371,6 +388,17 @@ class BaseScraper(ABC):
             try:
                 debug_file.write_text(response.text, encoding="utf-8")
                 self.log(f"   📝 Răspuns salvat: {debug_file}", "INFO")
+            except Exception:
+                pass
+            # Extrage mesaje de eroare din răspuns (PrestaShop, MPS Mobile etc.)
+            try:
+                resp_soup = BeautifulSoup(response.text or "", "html.parser")
+                for sel in (".alert-danger", ".alert.alert-danger", ".error", "[role='alert']", ".invalid-feedback"):
+                    for el in resp_soup.select(sel):
+                        txt = (el.get_text() or "").strip()
+                        if txt and len(txt) < 200:
+                            self.log(f"   📌 Mesaj eroare: {txt[:150]}", "WARNING")
+                            break
             except Exception:
                 pass
             self.log(f"   ⚠️ Login eșuat – verifică credențiale (status: {response.status_code})", "WARNING")
