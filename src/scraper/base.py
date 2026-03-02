@@ -86,7 +86,7 @@ class BaseScraper(ABC):
 
         attributes = {}
         if hasattr(self.app, "extract_product_attributes"):
-            attributes = self.app.extract_product_attributes(name, description, source_url)
+            attributes = self.app.extract_product_attributes(name, description, source_url, supplier_name=self.name)
 
         category_slug = ""
         if hasattr(self.app, "get_webgsm_category"):

@@ -2080,9 +2080,10 @@ class ImportProduse:
 
         return f"WG-{type_code}-{model_code}-{brand_code}-{counter:02d}"
 
-    def extract_product_attributes(self, product_name, description='', product_url=''):
+    def extract_product_attributes(self, product_name, description='', product_url='', supplier_name=''):
         """
         Extrage atributele WooCommerce din titlul produsului (și opțional din URL slug).
+        supplier_name: folosit doar la mpsmobile – la baterii, OEM/original din descriere e greșit → forțăm Aftermarket.
         Returnează: pa_model, pa_calitate, pa_brand-piesa, pa_tehnologie
         """
         text = f"{product_name} {description}".lower()
@@ -2201,6 +2202,12 @@ class ImportProduse:
         elif re.search(r'\boriginal\b', text) and 'aftermarket' not in text and 'oem pull' not in text and 'genuine' not in text and 'service pack' not in text:
             calitate = 'Original'
 
+        # Doar la MPS Mobile: bateriile au adesea „OEM”/„original” în titlu/descriere din greșeală → forțăm Aftermarket
+        supp = (supplier_name or '').lower().strip()
+        is_battery = any(x in text for x in ['battery', 'baterie', 'acumulator', 'accumulator', 'replacement battery', 'baterii'])
+        if supp == 'mpsmobile' and is_battery and calitate in ('Premium OEM', 'Original'):
+            calitate = 'Aftermarket'
+
         # BRAND PIESA - extragere din titlul original (EN): Ampsentrix, JK, ZY, GX, Hex, Genuine
         brand_piesa = ''
         brand_patterns = [
@@ -2232,6 +2239,9 @@ class ImportProduse:
                 brand_piesa = 'Samsung Original'
             elif 'oem' in text or calitate in ('Premium OEM', 'Service Pack'):
                 brand_piesa = 'Premium OEM'
+        # Doar la MPS Mobile: la baterii nu afișa Premium OEM / Apple Original / Samsung Original
+        if supp == 'mpsmobile' and is_battery and brand_piesa in ('Premium OEM', 'Apple Original', 'Samsung Original'):
+            brand_piesa = ''
         # NU pune "Aftermarket Plus" în brand_piesa - e CALITATE, nu brand. Brand = JK, GX, ZY, RJ sau Premium OEM.
 
         # TEHNOLOGIE - din titlul original (EN): OLED, Soft OLED, Incell, TFT
@@ -4871,7 +4881,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"   📦 Disponibilitate: {availability} → locatie_stoc: {locatie_stoc}", "INFO")
 
             # ===== WEBGSM: Extrage atribute, categorie slug, coduri, features =====
-            attributes = self.extract_product_attributes(product_name, description, product_link or '')
+            attributes = self.extract_product_attributes(product_name, description, product_link or '', supplier_name=supplier_name)
             category_slug = self.get_webgsm_category(product_name, description=description)
             compat_codes = self.extract_compatibility_codes(description)
             screen_features = self.detect_screen_features(product_name, description)
