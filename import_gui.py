@@ -1536,6 +1536,14 @@ class ImportProduse:
         self.btn_start = ttk.Button(frame_buttons, text="🚀 START EXPORT CSV", 
                                      command=self.start_import, style='Accent.TButton')
         self.btn_start.pack(side='left', padx=5)
+
+        # Mod nou: doar imagini din sku_list (scraping minim + upload imagini + CSV gol, doar SKU furnizor + Images)
+        self.btn_start_images_sku = ttk.Button(
+            frame_buttons,
+            text="📷 START DOAR IMAGINI din sku_list",
+            command=self.start_images_only_from_sku
+        )
+        self.btn_start_images_sku.pack(side='left', padx=5)
         
         self.btn_stop = ttk.Button(frame_buttons, text="⛔ STOP", 
                                     command=self.stop_import, state='disabled')
@@ -1550,6 +1558,47 @@ class ImportProduse:
 
         ttk.Button(frame_buttons, text="📄 Deschide lista SKU", 
                   command=_open_sku_file).pack(side='right', padx=5)
+
+        # ==== SECȚIUNE NOUĂ: UPLOAD DOAR IMAGINI DIN CSV EXISTENT ====
+        images_only_frame = ttk.LabelFrame(parent, text="Upload doar imagini (CSV WebGSM existent)", padding=10)
+        images_only_frame.pack(fill='x', padx=10, pady=(0, 10))
+
+        self.images_only_csv_var = tk.StringVar(value="")
+        self.images_only_dry_run_var = tk.BooleanVar(value=True)
+
+        ttk.Label(images_only_frame, text="CSV WebGSM (același header ca exportul standard):").grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        ttk.Entry(images_only_frame, textvariable=self.images_only_csv_var, width=50).grid(row=0, column=1, padx=5, pady=2, sticky='w')
+
+        def _browse_images_only_csv():
+            filename = filedialog.askopenfilename(
+                title="Selectează CSV WebGSM (pentru re-upload imagini)",
+                filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")]
+            )
+            if filename:
+                self.images_only_csv_var.set(filename)
+
+        ttk.Button(images_only_frame, text="Răsfoire...", command=_browse_images_only_csv).grid(row=0, column=2, padx=5, pady=2)
+
+        ttk.Checkbutton(
+            images_only_frame,
+            text="Dry-run (simulează, nu scrie CSV nou)",
+            variable=self.images_only_dry_run_var
+        ).grid(row=1, column=0, columnspan=2, sticky='w', padx=5, pady=(4, 2))
+
+        ttk.Label(
+            images_only_frame,
+            text="Folosește doar coloanele „meta:sku_furnizor” și „Images” din CSV. "
+                 "Descarcă pozele de la furnizor, le urcă în WordPress și generează un CSV nou cu link-urile finale.",
+            wraplength=800,
+            foreground="#555"
+        ).grid(row=2, column=0, columnspan=3, sticky='w', padx=5, pady=(4, 2))
+
+        ttk.Button(
+            images_only_frame,
+            text="📷 START DOAR IMAGINI (CSV existent)",
+            command=self.start_images_only_mode,
+            style='Accent.TButton'
+        ).grid(row=3, column=0, columnspan=1, sticky='w', padx=5, pady=(8, 2))
         
     def setup_config_tab(self, parent):
         """Setup tab Configurare"""
@@ -2840,6 +2889,444 @@ class ImportProduse:
         self.btn_stop.config(state='disabled')
         self.progress_var.set("Import oprit")
 
+    def start_images_only_from_sku(self):
+        """
+        Pornește modul „Doar imagini din sku_list”:
+        - citește sku_list (exact ca importul normal),
+        - rulează scraping minim DOAR pentru a extrage sku_furnizor + imagini,
+        - uploadează imaginile în WordPress,
+        - generează un CSV WebGSM cu același header, dar cu restul câmpurilor goale
+          (populate doar coloanele Images și meta:sku_furnizor / meta:furnizor_activ).
+        """
+        sku_path = Path(self.sku_file_var.get())
+        if not sku_path.exists() and not sku_path.is_absolute():
+            sku_path = self._script_dir / self.sku_file_var.get()
+        if not sku_path.exists():
+            messagebox.showerror("Eroare", f"Fișierul {self.sku_file_var.get()} nu există!")
+            return
+        self._resolved_sku_file = str(sku_path)
+
+        if not messagebox.askyesno(
+            "Confirmare",
+            "Rulezi modul „Doar imagini din sku_list”?\n\n"
+            "Programul va face scraping ca înainte, dar va păstra doar SKU furnizor + pozele,\n"
+            "va urca imaginile în WordPress și va genera un CSV cu restul câmpurilor goale."
+        ):
+            return
+
+        self.running = True
+        self.btn_start.config(state='disabled')
+        self.btn_stop.config(state='normal')
+        self.progress_bar.start()
+
+        thread = threading.Thread(target=self.run_images_only_from_sku, daemon=True)
+        thread.start()
+
+    def run_images_only_from_sku(self):
+        """
+        Rulează efectiv modul „Doar imagini din sku_list”.
+        Folosește scrape clasic, dar construiește un CSV special cu:
+        - Images: link-urile WordPress,
+        - meta:sku_furnizor, meta:furnizor_activ,
+        restul câmpurilor goale.
+        """
+        try:
+            self.log("=" * 70, "INFO")
+            self.log("📷 START MOD „DOAR IMAGINI din sku_list”", "INFO")
+            self.log("=" * 70, "INFO")
+
+            # Furnizor selectat și config (identic cu run_import)
+            supplier_display = self.supplier_var.get() if hasattr(self, 'supplier_var') else "MobileSentrix.eu"
+            supplier_name = "mobilesentrix"
+            if hasattr(self, '_suppliers_list') and self._suppliers_list:
+                supp = next((s for s in self._suppliers_list if s["display_name"] == supplier_display), None)
+                if supp:
+                    supplier_name = supp["name"]
+            supplier_config = ScraperFactory.load_supplier_config(supplier_name) if ScraperFactory else None
+            if not supplier_config:
+                supplier_config = {}
+            scraper = ScraperFactory.get_scraper(supplier_name, self) if ScraperFactory else None
+            self.log(f"📦 Furnizor: {supplier_display} ({supplier_name})", "INFO")
+
+            # Citește SKU-uri (listă dict: url, code opțional)
+            sku_file_path = getattr(self, '_resolved_sku_file', None) or self.sku_file_var.get()
+            sku_items = self.read_sku_file(sku_file_path)
+            self.log(f"📋 Găsite {len(sku_items)} intrări pentru procesare (doar imagini)", "INFO")
+
+            success_count = 0
+            error_count = 0
+            no_images_count = 0
+            products_images_data = []  # pentru CSV special (doar imagini)
+
+            for idx, item in enumerate(sku_items, 1):
+                if not self.running:
+                    break
+
+                url_or_sku = item['url']
+                manual_code = item.get('code')
+                display_label = f"{url_or_sku[:55]}..." if len(url_or_sku) > 58 else url_or_sku
+                if manual_code:
+                    display_label += f" | {manual_code}"
+
+                self.progress_var.set(f"[Doar imagini] Produs {idx}/{len(sku_items)}: {display_label}")
+                self.log("\n" + "=" * 70, "INFO")
+                self.log(f"[{idx}/{len(sku_items)}] 🔵 START (doar imagini): {display_label}", "INFO")
+                self.log("=" * 70, "INFO")
+
+                try:
+                    # Scraping: prin scraper (multi-furnizor) sau direct MobileSentrix
+                    if scraper:
+                        product_data = scraper.scrape_product(url_or_sku)
+                    else:
+                        product_data = self.scrape_product(
+                            url_or_sku,
+                            skip_images=supplier_config.get("skip_images", False),
+                            supplier_name=supplier_config.get("name", "mobilesentrix"),
+                        )
+
+                    if not product_data:
+                        error_count += 1
+                        self.log("✗ Nu s-au putut extrage datele produsului (None din scraper)", "ERROR")
+                        continue
+
+                    # SKU furnizor ca identificator principal
+                    sku_furnizor = str(product_data.get('sku_furnizor', product_data.get('sku', '')) or '').strip()
+                    if not sku_furnizor:
+                        self.log("   ⚠️ Lipsă sku_furnizor – produs sărit", "WARNING")
+                        error_count += 1
+                        continue
+
+                    images_list = product_data.get('images') or []
+                    if not images_list:
+                        self.log("   ⏭️ Produs fără imagini – sar peste", "INFO")
+                        no_images_count += 1
+                        continue
+
+                    # Optional: selecție manuală imagini / badge-uri, ca în mod normal (dacă userul vrea)
+                    supplier_name_lower = supplier_config.get("name", "").lower()
+                    if images_list and len(images_list) > 1 and supplier_name_lower != "mobilesentrix":
+                        images_list = self.process_image_selection(images_list, product_data, supplier_name_lower)
+                    if images_list and self.badge_preview_var.get():
+                        images_list = self.process_images_with_badges(images_list, product_data)
+
+                    # Pregătește local paths pentru upload (ignoră imagini fără fișier local)
+                    upload_candidates = []
+                    for img in images_list:
+                        img_path = None
+                        if isinstance(img, dict):
+                            img_path = img.get('local_path') or img.get('path')
+                        else:
+                            img_path = img
+                        if img_path and Path(img_path).exists():
+                            upload_candidates.append(img_path)
+
+                    if not upload_candidates:
+                        self.log("   ⏭️ Nicio imagine locală pregătită pentru upload – sar peste", "WARNING")
+                        no_images_count += 1
+                        continue
+
+                    # Upload imagini pe WordPress (fără renumire SEO; scopul este doar refacerea galeriei)
+                    new_wp_urls = []
+                    for img_idx, img_path in enumerate(upload_candidates, 1):
+                        self.log(f"   📤 Upload imagine [{img_idx}/{len(upload_candidates)}]: {img_path}", "INFO")
+                        wp_result = self.upload_image_to_wordpress(str(img_path))
+                        if wp_result and isinstance(wp_result, dict) and wp_result.get('src'):
+                            new_wp_urls.append(self._normalize_image_url(wp_result['src']))
+                        else:
+                            self.log("      ✗ Upload eșuat – imagine sărită", "WARNING")
+
+                    if not new_wp_urls:
+                        self.log("   ✗ Nicio imagine nu a putut fi uploadată – produs ignorat", "ERROR")
+                        error_count += 1
+                        continue
+
+                    # Limită imagini / produs, ca în export_to_csv
+                    if len(new_wp_urls) > MAX_IMAGES_IN_CSV:
+                        new_wp_urls = new_wp_urls[:MAX_IMAGES_IN_CSV]
+                        self.log(f"   📷 Limitare: max {MAX_IMAGES_IN_CSV} imagini/produs în CSV", "INFO")
+
+                    products_images_data.append({
+                        'sku_furnizor': sku_furnizor,
+                        'images_wp': new_wp_urls,
+                        'furnizor_activ': supplier_config.get("name", supplier_name)
+                    })
+
+                    success_count += 1
+                    self.log(f"✓ Produs procesat (doar imagini). SKU furnizor: {sku_furnizor}", "SUCCESS")
+
+                except Exception as e:
+                    error_count += 1
+                    self.log(f"✗ Eroare (doar imagini): {e}", "ERROR")
+
+            # Generare CSV special cu imagini doar
+            csv_filename = None
+            csv_path = None
+            if products_images_data:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                csv_filename = f"export_webgsm_images_only_{timestamp}.csv"
+                csv_path = self.export_images_only_to_csv(products_images_data, csv_filename)
+                if csv_path:
+                    self.log(f"\n✅ CSV WebGSM (doar imagini) creat: {csv_path}", "SUCCESS")
+
+            # Sumar
+            self.log("\n" + "=" * 70, "INFO")
+            self.log("📊 SUMAR MOD „DOAR IMAGINI din sku_list”:", "INFO")
+            self.log(f"   ✓ Produse cu imagini actualizate: {success_count}", "SUCCESS")
+            self.log(f"   ⏭️ Produse fără imagini: {no_images_count}", "INFO")
+            self.log(f"   ✗ Erori scraping / upload: {error_count}", "ERROR")
+            self.log(f"   📦 Total intrări sku_list: {len(sku_items)}", "INFO")
+            self.log("=" * 70, "INFO")
+
+            csv_info = f"\nFișier CSV imagini: {csv_filename}" if csv_filename else ""
+            messagebox.showinfo(
+                "Mod „Doar imagini” finalizat",
+                f"Procesare finalizată!\n\n"
+                f"Produse cu imagini: {success_count}\n"
+                f"Fără imagini: {no_images_count}\n"
+                f"Erori: {error_count}{csv_info}\n"
+                f"Folder imagini locale: images/"
+            )
+
+            if csv_path:
+                try:
+                    os.startfile(str(self._script_dir / "data"))
+                except Exception:
+                    pass
+
+        except Exception as e:
+            self.log(f"✗ Eroare critică în mod „Doar imagini din sku_list”: {e}", "ERROR")
+            import traceback
+            self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
+            messagebox.showerror("Eroare", f"Eroare critică în mod „Doar imagini din sku_list”:\n{e}")
+        finally:
+            self.progress_bar.stop()
+            self.btn_start.config(state='normal')
+            self.btn_stop.config(state='disabled')
+            if self.running:
+                self.progress_var.set("Mod „Doar imagini din sku_list” finalizat")
+            self.running = False
+
+    def start_images_only_mode(self):
+        """
+        Pornește modul „doar imagini”:
+        - citește un CSV WebGSM existent (același header),
+        - folosește DOAR coloanele „meta:sku_furnizor” și „Images”,
+        - descarcă imaginile de la furnizor, le urcă în WordPress și (dacă nu e dry-run)
+          generează un CSV nou cu același header dar cu coloana Images actualizată (link-uri WordPress).
+        """
+        csv_path = self.images_only_csv_var.get().strip()
+        if not csv_path:
+            messagebox.showerror("Eroare", "Selectează un fișier CSV WebGSM pentru modul „doar imagini”.")
+            return
+        csv_path_obj = Path(csv_path)
+        if not csv_path_obj.exists() and not csv_path_obj.is_absolute():
+            csv_path_obj = self._script_dir / csv_path
+        if not csv_path_obj.exists():
+            messagebox.showerror("Eroare", f"Fișierul CSV nu există:\n{csv_path_obj}")
+            return
+
+        if not messagebox.askyesno(
+            "Confirmare",
+            "Rulezi modul „Upload doar imagini” pe acest CSV?\n\n"
+            "Vor fi folosite numai coloanele „meta:sku_furnizor” și „Images”."
+        ):
+            return
+
+        self.running = True
+        self.btn_start.config(state='disabled')
+        self.btn_stop.config(state='normal')
+        self.progress_bar.start()
+
+        thread = threading.Thread(
+            target=self.run_images_only_mode,
+            args=(str(csv_path_obj), self.images_only_dry_run_var.get()),
+            daemon=True
+        )
+        thread.start()
+
+    def run_images_only_mode(self, csv_path, dry_run=True):
+        """Rulează efectiv update-ul de imagini pe un CSV existent."""
+        import csv
+        try:
+            self.log("=" * 70, "INFO")
+            self.log(f"📷 START MOD „DOAR IMAGINI” pe CSV: {csv_path}", "INFO")
+            self.log(f"   Mod: {'DRY-RUN (fără fișier nou)' if dry_run else 'APLICĂ (generează CSV nou)'}", "INFO")
+            self.log("=" * 70, "INFO")
+
+            src_path = Path(csv_path)
+            if not src_path.exists():
+                self.log(f"✗ CSV nu există: {src_path}", "ERROR")
+                messagebox.showerror("Eroare", f"CSV nu există:\n{src_path}")
+                return
+
+            # Citește CSV-ul existent
+            with open(src_path, 'r', encoding='utf-8-sig', newline='') as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames or []
+                rows = list(reader)
+
+            if not fieldnames:
+                self.log("✗ CSV fără header (fieldnames goale)", "ERROR")
+                messagebox.showerror("Eroare", "CSV nu are header (prima linie cu nume coloane).")
+                return
+
+            # Coloane cheie (case-insensitive)
+            header_map = {name.lower(): name for name in fieldnames}
+            sku_col = header_map.get('meta:sku_furnizor') or header_map.get('sku_furnizor')
+            images_col = header_map.get('images')
+
+            if not sku_col or not images_col:
+                self.log(f"✗ Lipsesc coloanele necesare. Găsite: {fieldnames}", "ERROR")
+                messagebox.showerror(
+                    "Eroare",
+                    "CSV trebuie să conțină minim coloanele:\n"
+                    " - meta:sku_furnizor (sau sku_furnizor)\n"
+                    " - Images"
+                )
+                return
+
+            total_rows = len(rows)
+            self.log(f"📊 Rânduri în CSV: {total_rows}", "INFO")
+
+            # Director pentru imagini temporare
+            images_root = self._script_dir / "images"
+            images_root.mkdir(exist_ok=True)
+            reimport_dir = images_root / "reimport_images"
+            reimport_dir.mkdir(exist_ok=True)
+
+            updated_count = 0
+            skipped_no_images = 0
+            error_count = 0
+
+            def _parse_image_urls(images_str):
+                if not images_str:
+                    return []
+                # Acceptă separare prin virgulă sau pipe
+                raw = str(images_str).replace('|', ',')
+                urls = [u.strip() for u in raw.split(',') if u.strip()]
+                return urls
+
+            # Parcurge rândurile și, unde există imagini, descarcă + uploadează pe WP
+            for idx, row in enumerate(rows, 1):
+                if not self.running:
+                    self.log("⛔ Mod „doar imagini” oprit de utilizator", "WARNING")
+                    break
+
+                sku_val = (row.get(sku_col) or '').strip().strip("'").strip()
+                images_str = (row.get(images_col) or '').strip()
+
+                self.progress_var.set(f"CSV imagini: rând {idx}/{total_rows} (SKU furnizor: {sku_val or 'N/A'})")
+                self.log(f"[{idx}/{total_rows}] 🔄 Rând CSV – SKU furnizor: {sku_val or 'N/A'}", "INFO")
+
+                if not images_str:
+                    skipped_no_images += 1
+                    self.log("   ⏭️ Fără imagini în coloana Images – sar peste", "INFO")
+                    continue
+
+                image_urls = _parse_image_urls(images_str)
+                if not image_urls:
+                    skipped_no_images += 1
+                    self.log("   ⏭️ Coloana Images nu conține URL-uri valide – sar peste", "WARNING")
+                    continue
+
+                # Descarcă fiecare imagine local și urcă pe WordPress
+                new_wp_urls = []
+                for img_idx, url in enumerate(image_urls, 1):
+                    safe_sku = re.sub(r'[^0-9A-Za-z_-]+', '_', sku_val or 'no_sku')
+                    # Determină extensia
+                    parsed = url.split('?')[0]
+                    ext = Path(parsed).suffix or '.jpg'
+                    if not ext.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+                        ext = '.jpg'
+                    local_name = f"re_{safe_sku}_{img_idx}{ext}"
+                    local_path = reimport_dir / local_name
+
+                    try:
+                        self.log(f"      🌐 Descarc imagine [{img_idx}]: {url[:80]}...", "INFO")
+                        resp = requests.get(url, timeout=30)
+                        if resp.status_code != 200:
+                            self.log(f"         ✗ HTTP {resp.status_code} la download", "WARNING")
+                            continue
+                        with open(local_path, 'wb') as lf:
+                            lf.write(resp.content)
+                    except Exception as e:
+                        self.log(f"         ✗ Eroare download: {e}", "WARNING")
+                        continue
+
+                    # Upload pe WordPress
+                    wp_result = self.upload_image_to_wordpress(str(local_path))
+                    if wp_result and isinstance(wp_result, dict) and wp_result.get('src'):
+                        new_wp_urls.append(self._normalize_image_url(wp_result['src']))
+                    else:
+                        self.log("         ✗ Upload eșuat – păstrez URL-ul original ca fallback", "WARNING")
+                        new_wp_urls.append(url)
+
+                if not new_wp_urls:
+                    error_count += 1
+                    self.log("   ✗ Nicio imagine nu a putut fi uploadată – rând nemodificat", "ERROR")
+                    continue
+
+                # Limită de imagini, similar cu export_to_csv
+                if len(new_wp_urls) > MAX_IMAGES_IN_CSV:
+                    new_wp_urls = new_wp_urls[:MAX_IMAGES_IN_CSV]
+                    self.log(f"   📷 Limitare: max {MAX_IMAGES_IN_CSV} imagini/produs în CSV", "INFO")
+
+                row[images_col] = ', '.join(new_wp_urls)
+                updated_count += 1
+                self.log(f"   ✓ Imagini actualizate: {len(new_wp_urls)} URL-uri WordPress", "SUCCESS")
+
+            # Dacă e dry-run, nu scriem CSV nou
+            if dry_run:
+                self.log("🔎 Dry-run complet – nu am scris niciun CSV nou.", "INFO")
+                messagebox.showinfo(
+                    "Dry-run doar imagini",
+                    f"Dry-run finalizat.\n\nRânduri CSV: {total_rows}\n"
+                    f"Rânduri cu imagini procesate: {updated_count}\n"
+                    f"Rânduri fără imagini: {skipped_no_images}\n"
+                    f"Rânduri cu erori: {error_count}\n\n"
+                    "Nu a fost creat niciun fișier CSV nou (dry-run)."
+                )
+                return
+
+            # Scrie CSV nou cu același header
+            out_name = src_path.stem + "_IMAGES_WP.csv"
+            out_path = self._script_dir / "data" / out_name
+            out_path.parent.mkdir(exist_ok=True)
+
+            with open(out_path, 'w', encoding='utf-8-sig', newline='') as wf:
+                writer = csv.DictWriter(wf, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
+
+            self.log(f"✅ CSV nou creat cu imagini WordPress: {out_path}", "SUCCESS")
+            messagebox.showinfo(
+                "Upload imagini finalizat",
+                f"Mod „doar imagini” finalizat.\n\nRânduri CSV: {total_rows}\n"
+                f"Rânduri cu imagini procesate: {updated_count}\n"
+                f"Rânduri fără imagini: {skipped_no_images}\n"
+                f"Rânduri cu erori: {error_count}\n\n"
+                f"CSV nou: {out_path}"
+            )
+            try:
+                os.startfile(str(out_path.parent))
+            except Exception:
+                pass
+
+        except Exception as e:
+            self.log(f"✗ Eroare critică în modul „doar imagini”: {e}", "ERROR")
+            import traceback
+            self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
+            messagebox.showerror("Eroare", f"Eroare critică în modul „doar imagini”:\n{e}")
+        finally:
+            self.progress_bar.stop()
+            self.btn_start.config(state='normal')
+            self.btn_stop.config(state='disabled')
+            if self.running:
+                self.progress_var.set("Mod „doar imagini” finalizat")
+            self.running = False
+
     def check_batch_badge_settings(self, product_data):
         """Verifică dacă există setări batch pentru acest produs (model compatibil). Returnează (badge_data, style) sau None."""
         if not getattr(self, 'batch_badge_settings', None):
@@ -4049,7 +4536,71 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             import traceback
             self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
             return None
-    
+
+    def export_images_only_to_csv(self, products_images_data, filename="export_produse_images_only.csv"):
+        """
+        Exportă un CSV WebGSM care folosește același header ca exportul complet,
+        dar populează doar coloanele:
+        - Images
+        - meta:sku_furnizor
+        - meta:furnizor_activ
+        Toate celelalte câmpuri rămân goale.
+        """
+        import csv
+
+        try:
+            csv_path = self._script_dir / "data" / filename
+            self.log(f"📄 Creez fișier CSV WebGSM (doar imagini): {csv_path}", "INFO")
+
+            # Header identic cu export_to_csv
+            fieldnames = [
+                'ID', 'Type', 'SKU', 'GTIN, UPC, EAN, or ISBN', 'Name', 'Published', 'Is featured?',
+                'Visibility in catalog', 'Short description', 'Description',
+                'Tax status', 'Tax class', 'In stock?', 'Stock', 'Low stock amount', 'Backorders allowed?',
+                'Regular price', 'Categories', 'Tags', 'Images', 'Parent', 'Allow customer reviews?',
+                # ATRIBUTE WOOCOMMERCE (5 atribute x 4 coloane)
+                'Attribute 1 name', 'Attribute 1 value(s)', 'Attribute 1 visible', 'Attribute 1 global',
+                'Attribute 2 name', 'Attribute 2 value(s)', 'Attribute 2 visible', 'Attribute 2 global',
+                'Attribute 3 name', 'Attribute 3 value(s)', 'Attribute 3 visible', 'Attribute 3 global',
+                'Attribute 4 name', 'Attribute 4 value(s)', 'Attribute 4 visible', 'Attribute 4 global',
+                'Attribute 5 name', 'Attribute 5 value(s)', 'Attribute 5 visible', 'Attribute 5 global',
+                # ACF META
+                'meta:gtin_ean', 'meta:sku_furnizor', 'meta:furnizor_activ',
+                'meta:pret_achizitie', 'meta:locatie_stoc', 'meta:garantie_luni',
+                'meta:coduri_compatibilitate', 'meta:ic_movable', 'meta:truetone_support',
+                'meta:source_url',
+                # SEO RANK MATH
+                'meta:rank_math_title', 'meta:rank_math_description', 'meta:rank_math_focus_keyword'
+            ]
+
+            with open(csv_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+                writer.writeheader()
+
+                for idx, item in enumerate(products_images_data, 1):
+                    sku_furnizor = str(item.get('sku_furnizor', '') or '').strip()
+                    images_wp = item.get('images_wp') or []
+                    furnizor_activ = str(item.get('furnizor_activ', '') or '').strip()
+
+                    self.log(f"   🔄 CSV doar imagini – rând {idx}: SKU furnizor={sku_furnizor}, imagini={len(images_wp)}", "INFO")
+
+                    row = {name: '' for name in fieldnames}
+                    row['Images'] = ', '.join(images_wp)
+                    row['meta:sku_furnizor'] = sku_furnizor
+                    row['meta:furnizor_activ'] = furnizor_activ
+                    writer.writerow(row)
+
+            self.log(f"✓ CSV (doar imagini) creat cu succes: {csv_path}", "SUCCESS")
+            self.log(f"   📊 Total produse exportate (imagini): {len(products_images_data)}", "INFO")
+            self.log(f"   📋 Coloane CSV: {len(fieldnames)} (atribute + ACF + SEO)", "INFO")
+            return str(csv_path)
+
+        except Exception as e:
+            self.log(f"✗ Eroare creare CSV (doar imagini): {e}", "ERROR")
+            import traceback
+            self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
+            return None
+
     def scrape_product(self, ean, skip_images=False, supplier_name='mobilesentrix'):
         """Extrage date produs de pe MobileSentrix și descarcă imagini local
         Acceptă: EAN, SKU sau LINK DIRECT la produs.
