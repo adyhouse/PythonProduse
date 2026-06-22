@@ -5565,7 +5565,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 data=file_data,
                 headers=headers,
                 auth=(wp_username, wp_app_password.replace(' ', '')),  # Remove spaces din password
-                timeout=30  # ⚡ Redus de la 60s (imaginile sunt deja optimizate, <1.5MB)
+                timeout=30,  # ⚡ Redus de la 60s (imaginile sunt deja optimizate, <1.5MB)
+                allow_redirects=False,  # IMPORTANT: dacă URL-ul e http sau are /test, vrem să vedem redirect-ul real
             )
             
             if response.status_code in [200, 201]:
@@ -5580,9 +5581,15 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 }
             else:
                 error_msg = response.text[:300] if response.text else f"Status {response.status_code}"
+                # Ajutor diagnostic: dacă avem redirect sau URL greșit, vedem imediat aici.
+                loc = response.headers.get('Location') or response.headers.get('location') or ''
+                if loc:
+                    self.log(f"         ↪ Redirect detectat (Location): {loc}", "WARNING")
                 self.log(f"         ✗ Upload eșuat HTTP {response.status_code}: {error_msg}", "WARNING")
                 if response.status_code == 401:
                     self.log(f"         → 401: Folosește în .env utilizatorul WordPress real (ex: admin) la WP_USERNAME și parola de aplicație la WP_APP_PASSWORD (NU Consumer Key/Secret).", "WARNING")
+                if response.status_code in (301, 302, 307, 308):
+                    self.log("         → Redirect la upload: verifică să fie WOOCOMMERCE_URL cu https și fără /test.", "WARNING")
                 # Retry o singură dată la erori de server sau timeout
                 if response.status_code >= 500 or response.status_code == 429:
                     self.log(f"         🔄 Reîncerc upload: {local_path.name}...", "INFO")
@@ -5592,7 +5599,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                             data=file_data,
                             headers=headers,
                             auth=(wp_username, wp_app_password.replace(' ', '')),
-                            timeout=45
+                            timeout=45,
+                            allow_redirects=False
                         )
                         if r2.status_code in [200, 201]:
                             md = r2.json()
