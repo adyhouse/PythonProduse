@@ -4601,6 +4601,167 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
             return None
 
+    def _mobilesentrix_find_search_links(self, soup, base_url='https://www.mobilesentrix.eu'):
+        """Găsește link-uri produs în pagina de căutare MobileSentrix (HTML nou + fallback vechi)."""
+        skip_parts = (
+            '/replacement-parts/', '/board-components/', '/catalogsearch/',
+            '/customer/', 'javascript:', '/checkout/', '/cart/',
+        )
+        selectors = [
+            '.products-grid .item a.product-image',
+            '.product-listing .item a.product-image',
+            '.products-grid .item a[href]',
+            'a.product-item-link',
+            'a.product.photo',
+            'a[data-product-id]',
+        ]
+        links = []
+        seen = set()
+        for selector in selectors:
+            for anchor in soup.select(selector):
+                href = (anchor.get('href') or '').strip()
+                if not href or href in seen:
+                    continue
+                if href.startswith('/'):
+                    href = base_url + href
+                elif not href.startswith('http'):
+                    href = base_url + '/' + href.lstrip('/')
+                if 'mobilesentrix.eu' not in href:
+                    continue
+                if any(part in href for part in skip_parts):
+                    continue
+                seen.add(href)
+                links.append(anchor)
+            if links:
+                break
+        return links
+
+    def _extract_mobilesentrix_product_images(self, product_soup, product_id_internal, base_url):
+        """Extrage doar imaginile din galeria produsului curent (exclude related/upsell)."""
+        import json
+
+        img_urls = []
+        seen = set()
+        excluded_blocks = (
+            '.block-related', '.block-upsell', '.block-crosssell',
+            '.related-prod', '.category-products',
+        )
+
+        def _in_excluded_block(elem):
+            if not elem:
+                return False
+            for block_sel in excluded_blocks:
+                block = product_soup.select_one(block_sel)
+                if block and block in elem.parents:
+                    return True
+            return False
+
+        def _normalize_url(url):
+            if not url or str(url).strip().startswith('data:'):
+                return None
+            url = str(url).strip().split()[0]
+            if url.startswith('/'):
+                url = base_url + url
+            elif not url.startswith('http'):
+                url = base_url + '/' + url.lstrip('/')
+            url = url.replace('/thumbnail/', '/image/').replace('/small_image/', '/image/')
+            if any(x in url.lower() for x in ('wysiwyg', '/logo', '/icon', 'badge', 'sprite')):
+                return None
+            if 'catalog/product' not in url:
+                return None
+            return url.split('?')[0]
+
+        def _add(url):
+            url = _normalize_url(url)
+            if not url or url in seen:
+                return False
+            seen.add(url)
+            img_urls.append(url)
+            return True
+
+        def _iter_json_ld_objects(data):
+            if isinstance(data, dict):
+                if isinstance(data.get('@graph'), list):
+                    for item in data['@graph']:
+                        yield from _iter_json_ld_objects(item)
+                else:
+                    yield data
+            elif isinstance(data, list):
+                for item in data:
+                    yield from _iter_json_ld_objects(item)
+
+        main_zoom_id = f'MagicZoomPlusImage{product_id_internal}' if product_id_internal else None
+        magic_links = product_soup.find_all('a', {'data-zoom-id': True})
+        gallery_hrefs = []
+        for link in magic_links:
+            if _in_excluded_block(link):
+                continue
+            zoom_id = link.get('data-zoom-id') or ''
+            if main_zoom_id and zoom_id != main_zoom_id:
+                continue
+            href = link.get('href')
+            if href and '/catalog/product/' in href:
+                gallery_hrefs.append(href)
+
+        if gallery_hrefs:
+            for href in gallery_hrefs:
+                _add(href)
+            self.log(f"      ✓ Găsite {len(gallery_hrefs)} imagini în galeria MagicZoom", "INFO")
+            return img_urls
+
+        for script in product_soup.find_all('script', type='application/ld+json'):
+            try:
+                data = json.loads(script.string or '{}')
+            except Exception:
+                continue
+            for item in _iter_json_ld_objects(data):
+                if not isinstance(item, dict):
+                    continue
+                item_type = item.get('@type', '')
+                if item_type != 'Product' or 'image' not in item:
+                    continue
+                images = item['image']
+                if isinstance(images, str):
+                    images = [images]
+                elif not isinstance(images, list):
+                    continue
+                count_before = len(img_urls)
+                for img in images:
+                    if isinstance(img, str):
+                        _add(img)
+                    elif isinstance(img, dict):
+                        for key in ('contentUrl', 'url'):
+                            if img.get(key):
+                                _add(img[key])
+                                break
+                if len(img_urls) > count_before:
+                    self.log(f"      ✓ Găsite {len(img_urls) - count_before} imagini în JSON-LD Product", "INFO")
+
+        for og_img in product_soup.find_all('meta', property='og:image'):
+            content = og_img.get('content')
+            if content and _add(content):
+                self.log("      ✓ Găsită imagine în og:image", "INFO")
+
+        fallback_selectors = [
+            '.MagicZoom img',
+            'a.MagicZoom img',
+            '.product.media img',
+            '.fotorama__img',
+            '.gallery-placeholder img',
+            'img[data-role="image"]',
+            '.product-image-photo',
+        ]
+        for selector in fallback_selectors:
+            for img_elem in product_soup.select(selector):
+                if _in_excluded_block(img_elem):
+                    continue
+                for attr in ('src', 'data-src', 'data-original'):
+                    src = img_elem.get(attr)
+                    if src:
+                        _add(src)
+
+        return img_urls
+
     def scrape_product(self, ean, skip_images=False, supplier_name='mobilesentrix'):
         """Extrage date produs de pe MobileSentrix și descarcă imagini local
         Acceptă: EAN, SKU sau LINK DIRECT la produs.
@@ -4656,8 +4817,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     f.write(soup.prettify())
                 self.log(f"   📝 HTML căutare salvat: {debug_file}", "INFO")
                 
-                # Găsește primul produs valid din rezultate
-                product_links = soup.select('a.product-item-link')
+                # Găsește primul produs valid din rezultate (HTML nou: .products-grid .item a.product-image)
+                product_links = self._mobilesentrix_find_search_links(soup, base_url)
                 
                 if not product_links:
                     self.log(f"   ✗ Nu am găsit produse pentru SKU {search_sku}", "ERROR")
@@ -4665,6 +4826,8 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                 
                 # Folosește primul link
                 product_link = product_links[0].get('href')
+                if product_link and product_link.startswith('/'):
+                    product_link = base_url + product_link
                 product_id = search_sku  # Folosim SKU-ul ca ID pentru fișiere
                 
                 if not product_link:
@@ -4691,33 +4854,7 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     f.write(soup.prettify())
                 self.log(f"   📝 HTML salvat în: {debug_file}", "INFO")
                 
-                # Căuta orice link-uri de produs
-                all_product_links = []
-                
-                # Căută cu selectorii specifici pentru produse
-                product_selectors = [
-                    'a.product-item-link',
-                    'a.product.photo',
-                    'a[data-product-id]',
-                    'a[href*="/product/"]',
-                    'a[href*="/catalogsearch/result/"]'
-                ]
-                
-                for selector in product_selectors:
-                    found = soup.select(selector)
-                    if found:
-                        self.log(f"   Selector '{selector}' a găsit {len(found)} link-uri", "INFO")
-                        all_product_links.extend(found)
-                
-                # Elimină duplicatele și filtrează
-                unique_links = []
-                seen_hrefs = set()
-                for link in all_product_links:
-                    href = link.get('href', '')
-                    if href and href not in seen_hrefs and 'mobilesentrix.eu' in href:
-                        seen_hrefs.add(href)
-                        unique_links.append(link)
-                
+                unique_links = self._mobilesentrix_find_search_links(soup, base_url)
                 self.log(f"   🔎 Total link-uri găsite: {len(unique_links)}", "INFO")
                 
                 if not unique_links:
@@ -4730,7 +4867,9 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     return None
                 
                 # Folosește primul link valid
-                product_link = unique_links[0]['href']
+                product_link = unique_links[0].get('href')
+                if product_link and product_link.startswith('/'):
+                    product_link = base_url + product_link
                 self.log(f"   ✓ Link produs găsit: {product_link}", "INFO")
                 
                 # ⬇️ IMPORTANT: Descarcă pagina produsului!
@@ -4977,79 +5116,17 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             
             if self.download_images_var.get() and not skip_images:
                 self.log(f"   🖼️ Descarc imagini MARI...", "INFO")
-                
-                # 🎯 CAUTĂ IMAGINILE ÎN META TAGS + GALERIE COMPLETĂ
-                img_urls = set()
-                
-                # 1. Meta tags Open Graph (imaginea principală)
-                og_images = product_soup.find_all('meta', property='og:image')
-                for og_img in og_images:
-                    if og_img.get('content'):
-                        img_urls.add(og_img['content'])
-                        self.log(f"      ✓ Găsită imagine în og:image", "INFO")
-                
-                # 2. JSON-LD structured data (poate conține array de imagini)
-                json_ld_scripts = product_soup.find_all('script', type='application/ld+json')
-                for script in json_ld_scripts:
-                    try:
-                        import json
-                        data = json.loads(script.string)
-                        if isinstance(data, dict) and 'image' in data:
-                            images = data['image']
-                            if isinstance(images, str):
-                                img_urls.add(images)
-                            elif isinstance(images, list):
-                                for img in images:
-                                    if isinstance(img, str):
-                                        img_urls.add(img)
-                                    elif isinstance(img, dict) and 'url' in img:
-                                        img_urls.add(img['url'])
-                                self.log(f"      ✓ Găsite {len(images) if isinstance(images, list) else 1} imagini în JSON-LD", "INFO")
-                    except:
-                        pass
-                
-                # 3. 🔥 GALERIA MAGICZOOM - aici sunt TOATE imaginile!
-                magic_zoom_links = product_soup.find_all('a', {'data-zoom-id': True})
-                for link in magic_zoom_links:
-                    href = link.get('href')
-                    if href and '/catalog/product/' in href:
-                        img_urls.add(href)
-                self.log(f"      ✓ Găsite {len(magic_zoom_links)} imagini în galeria MagicZoom", "INFO")
-                
-                # 4. Link-uri cu atribut data-image (thumbnail gallery)
-                data_image_links = product_soup.find_all('a', {'data-image': True})
-                for link in data_image_links:
-                    href = link.get('href')
-                    if href and '/catalog/product/' in href:
-                        img_urls.add(href)
-                
-                # 5. Fallback: caută imagini în elemente img standard
-                img_selectors = [
-                    '.product-image-photo',
-                    'img[data-role="image"]',
-                    '.product-photo img',
-                    '.gallery-placeholder img'
-                ]
-                for selector in img_selectors:
-                    for img_elem in product_soup.select(selector):
-                        src = img_elem.get('src') or img_elem.get('data-src')
-                        if src and 'catalog/product' in src:
-                            img_urls.add(src)
-                
+
+                img_urls = self._extract_mobilesentrix_product_images(
+                    product_soup, product_id_internal, base_url
+                )
+
                 if not img_urls:
                     self.log(f"   ⚠️ Nu am găsit imagini pe pagina produsului", "WARNING")
                 else:
                     self.log(f"   🔍 Total imagini găsite: {len(img_urls)}", "INFO")
 
-                # Pregătește URL-urile (absolut + fără thumbnail)
-                prepared_urls = []
-                for img_url in list(img_urls)[:10]:  # Max 10 imagini
-                    if img_url.startswith('/'):
-                        img_url = 'https://www.mobilesentrix.eu' + img_url
-                    elif not img_url.startswith('http'):
-                        img_url = 'https://www.mobilesentrix.eu/' + img_url
-                    img_url = img_url.replace('/thumbnail/', '/image/').replace('/small_image/', '/image/')
-                    prepared_urls.append(img_url)
+                prepared_urls = list(img_urls)[:10]
 
                 # ⚡ DOWNLOAD PARALEL - 4 imagini simultan (de la ~30s la ~8s)
                 from concurrent.futures import ThreadPoolExecutor, as_completed
