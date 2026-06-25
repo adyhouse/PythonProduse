@@ -28,6 +28,7 @@ import re
 import html
 import uuid
 import time
+import shutil
 from deep_translator import GoogleTranslator
 try:
     from woocommerce import API
@@ -48,6 +49,8 @@ except ImportError:
 # Max imagini per produs în CSV. Imagini sunt deja uploadate de script pe WordPress;
 # CSV conține doar link-uri către aceste imagini – limitarea reduce volumul per rând la import.
 MAX_IMAGES_IN_CSV = 5
+# Versiune fix imagini batch (variante culoare același prefix URL) – verifică în log la START
+SCRAPER_IMAGE_BUILD = "2026-06-25-ms-id"
 
 # Mapare categorie → Tip Produs (pentru Atribut 5 în CSV)
 CATEGORY_TO_TYPE = {
@@ -3500,6 +3503,7 @@ class ImportProduse:
         try:
             self.log("=" * 70, "INFO")
             self.log(f"🚀 START PROCESARE PRODUSE (Mod: CSV WebGSM + Upload Imagini)", "INFO")
+            self.log(f"🔧 Build imagini: {SCRAPER_IMAGE_BUILD} (așteptat ms_XXXXX în nume fișiere)", "INFO")
             self.log("=" * 70, "INFO")
 
             # Furnizor selectat și config
@@ -4213,26 +4217,26 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     from concurrent.futures import ThreadPoolExecutor, as_completed
                     image_urls = []
                     if product.get('images'):
-                        # Redenumire imagini cu nume SEO (titlu tradus sau caracteristici produs)
+                        # Copie cu nume SEO pentru upload (păstrează originalul ms_XXXXX – nu strică batch-ul)
                         seo_title = longtail_title if (longtail_title and len(self.normalize_text(longtail_title)) >= 3) else ' '.join(filter(None, [tip_ro, pa_model, pa_tehnologie, pa_calitate])) or 'produs'
+                        sku_tag = str(product.get('sku_furnizor') or product.get('sku') or idx)
                         images_dir = self._script_dir / "images"
                         for img_idx, img in enumerate(product['images']):
                             if isinstance(img, dict) and 'local_path' in img:
                                 old_path = Path(img['local_path'])
                                 if old_path.exists():
                                     ext = old_path.suffix.lstrip('.').lower() or 'jpg'
-                                    new_name = self.generate_seo_filename(seo_title, ext, img_idx + 1)
+                                    seo_base = f"{seo_title} {sku_tag}" if sku_tag else seo_title
+                                    new_name = self.generate_seo_filename(seo_base, ext, img_idx + 1)
                                     new_path = images_dir / new_name
-                                    if old_path.resolve() != new_path.resolve() and new_name != old_path.name:
+                                    if old_path.resolve() != new_path.resolve():
                                         try:
-                                            if new_path.exists():
-                                                new_path.unlink()
-                                            old_path.rename(new_path)
+                                            shutil.copy2(old_path, new_path)
                                             img['local_path'] = str(new_path)
                                             img['name'] = new_name
-                                            self.log(f"   📁 Redenumit: {old_path.name} → {new_name}", "INFO")
+                                            self.log(f"   📁 Copie upload: {old_path.name} → {new_name}", "INFO")
                                         except Exception as e:
-                                            self.log(f"   ⚠️ Redenumire {old_path.name}: {e}", "WARNING")
+                                            self.log(f"   ⚠️ Copie {old_path.name}: {e}", "WARNING")
                         # Pregătește lista de imagini de uploadat
                         upload_tasks = []
                         fallback_urls = {}  # idx -> fallback URL
@@ -4251,6 +4255,14 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                             elif isinstance(img, dict) and 'src' in img:
                                 # Nu există local, folosește URL direct
                                 image_urls.append((img_idx, img['src']))
+
+                        if product.get('images') and not upload_tasks:
+                            self.log(
+                                f"   ⚠️ {len(product['images'])} imagini în memorie dar 0 fișiere locale – "
+                                "probabil cod vechi (nume colizionate) sau folder images/ gol. "
+                                f"Verifică build {SCRAPER_IMAGE_BUILD} și log «ms_XXXXX» la scrape.",
+                                "WARNING",
+                            )
 
                         if upload_tasks:
                             self.log(f"   📤 Upload {len(upload_tasks)} imagini pe WordPress (paralel)...", "INFO")
@@ -4411,7 +4423,14 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                         locatie_stoc = 'indisponibil'
 
                     # Filtru: scoatem URL-urile directe MobileSentrix din CSV; păstrăm doar imaginile de pe WordPress
+                    wp_before_filter = len(image_urls)
                     image_urls = [u for u in image_urls if 'mobilesentrix.eu' not in u]
+                    if wp_before_filter and not image_urls:
+                        self.log(
+                            "   ⚠️ Upload WordPress eșuat – rămân doar URL-uri MobileSentrix (eliminate din CSV). "
+                            "Verifică WP_APP_PASSWORD / imagini locale în folderul images/.",
+                            "WARNING",
+                        )
 
                     # Combină toate imaginile
                     all_images = ', '.join(image_urls) if image_urls else ''
@@ -4601,6 +4620,23 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             self.log(f"   Traceback: {traceback.format_exc()}", "ERROR")
             return None
 
+    def _mobilesentrix_image_file_id(self, product_id_internal, product_link=None, fallback_id=None):
+        """ID unic pentru fișiere imagini locale – evită coliziuni între variante (ex. culori) cu același prefix URL."""
+        import hashlib
+        if product_id_internal:
+            return f"ms_{product_id_internal}"
+        if fallback_id and re.match(r'^\d{10,14}$', str(fallback_id).strip()):
+            return str(fallback_id).strip()
+        if product_link:
+            slug = product_link.rstrip('/').split('/')[-1]
+            slug = re.sub(r'[<>:"/\\|?*]', '_', slug)
+            if len(slug) > 72:
+                digest = hashlib.md5(product_link.encode('utf-8')).hexdigest()[:8]
+                slug = f"{slug[:63]}_{digest}"
+            return slug
+        safe = re.sub(r'[^a-zA-Z0-9_-]', '_', str(fallback_id or 'prod'))
+        return safe[:80] or 'prod'
+
     def _mobilesentrix_find_search_links(self, soup, base_url='https://www.mobilesentrix.eu'):
         """Găsește link-uri produs în pagina de căutare MobileSentrix (HTML nou + fallback vechi)."""
         skip_parts = (
@@ -4786,13 +4822,10 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
             if ean.startswith('http://') or ean.startswith('https://'):
                 # E link direct! 🎯
                 product_link = ean
-                # Extrage un ID simplu din URL pentru nume fișiere (ultimul segment URL)
-                product_id = ean.rstrip('/').split('/')[-1][:50]  # Max 50 caractere
-                # Curăță caracterele invalide pentru Windows filenames
-                product_id = re.sub(r'[<>:"/\\|?*]', '_', product_id)
+                product_id = self._mobilesentrix_image_file_id(None, product_link=product_link)
                 self.log(f"   ✓ Link direct detectat!", "INFO")
                 self.log(f"      URL: {product_link[:80]}...", "INFO")
-                self.log(f"      ID produs: {product_id}", "INFO")
+                self.log(f"      ID fișiere (provizoriu): {product_id}", "INFO")
                 
                 # ⬇️ IMPORTANT: Descarcă pagina produsului!
                 self.log(f"   🔄 Se descarcă pagina produsului...", "INFO")
@@ -4894,6 +4927,14 @@ TAGS_RO: <if tags from source were given, translate them to fluent Romanian (e.g
                     product_id_internal = id_elem.get('value') or id_elem.get('data-product-id')
                     if product_id_internal:
                         self.log(f"   ✓ ID produs din atribut: {product_id_internal}", "INFO")
+
+            # ID unic pentru imagini locale (ms_199366 etc.) – variantele de culoare nu mai suprascriu aceleași fișiere
+            product_id = self._mobilesentrix_image_file_id(
+                product_id_internal,
+                product_link=product_link,
+                fallback_id=product_id,
+            )
+            self.log(f"   ✓ ID fișiere imagini: {product_id}", "INFO")
             
             # Salvează HTML pentru SKU extraction din JavaScript
             product_page_html = str(product_soup)
